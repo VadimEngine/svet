@@ -158,7 +158,8 @@ export function ColorVisualization() {
   const loadCSVFile = async () => {
     try {
       setIsLoading(true);
-      const response = await fetch('/colornames.csv');
+      const csvPath = `${process.env.PUBLIC_URL}/colornames.csv`;
+      const response = await fetch(csvPath);
       if (!response.ok) {
         throw new Error(`Failed to load CSV: ${response.statusText}`);
       }
