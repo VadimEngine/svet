@@ -1,6 +1,10 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
 import './ColorVisualization.css';
+
+const INITIAL_DISPLAY_LIMIT = 100;
+const DISPLAY_INCREMENT = 100;
+const SCROLL_LOAD_THRESHOLD_PX = 250;
 
 export function ColorVisualization() {
   const containerRef = useRef(null);
@@ -9,11 +13,27 @@ export function ColorVisualization() {
   const rendererRef = useRef(null);
   const particlesRef = useRef(null);
   const pointsMaterialRef = useRef(null);
-  const statsRef = useRef(null);
-  const errorRef = useRef(null);
-  const loadingRef = useRef(null);
+  const highlightMarkerRef = useRef(null);
+  const highlightCloudRef = useRef(null);
+  const highlightMaterialRef = useRef(null);
+  const colorsRef = useRef([]);
+  const needsRenderRef = useRef(true);
+  const listScrollRef = useRef(null);
+  const raycasterRef = useRef(null);
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [selectedColor, setSelectedColor] = useState(null);
+  const [sortedColors, setSortedColors] = useState([]);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [similarityThreshold, setSimilarityThreshold] = useState('');
+  const [hideOutliers, setHideOutliers] = useState(false);
+  const [reverseSort, setReverseSort] = useState(false);
+  const [displayLimit, setDisplayLimit] = useState(INITIAL_DISPLAY_LIMIT);
+  const [inspectedColor, setInspectedColor] = useState(null);
+  const [activeTab, setActiveTab] = useState('colors');
+  const [pointSize, setPointSize] = useState(1.5);
+  const [panelCollapsed, setPanelCollapsed] = useState(false);
+  const [filterByThreshold, setFilterByThreshold] = useState(true);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -42,8 +62,31 @@ export function ColorVisualization() {
     container.appendChild(renderer.domElement);
     rendererRef.current = renderer;
 
+    // Raycaster for click-to-inspect on the point cloud
+    const raycaster = new THREE.Raycaster();
+    raycaster.params.Points.threshold = 2.5;
+    raycasterRef.current = raycaster;
+
+    const pickAtScreen = (clientX, clientY) => {
+      const particles = particlesRef.current;
+      if (!particles) return;
+      const rect = renderer.domElement.getBoundingClientRect();
+      const mouse = new THREE.Vector2(
+        ((clientX - rect.left) / rect.width) * 2 - 1,
+        -((clientY - rect.top) / rect.height) * 2 + 1
+      );
+      raycaster.setFromCamera(mouse, camera);
+      const intersects = raycaster.intersectObject(particles);
+      if (intersects.length === 0) return;
+      // Take the closest hit
+      const idx = intersects[0].index;
+      const visible = particles.userData.visibleColors || colorsRef.current;
+      const picked = visible[idx];
+      if (picked) setInspectedColor(picked);
+    };
+
     // Setup controls
-    setupControls(camera, renderer);
+    setupControls(camera, renderer, pickAtScreen);
     addAxes(scene);
 
     // Handle window resize
@@ -51,13 +94,18 @@ export function ColorVisualization() {
       camera.aspect = window.innerWidth / window.innerHeight;
       camera.updateProjectionMatrix();
       renderer.setSize(window.innerWidth, window.innerHeight);
+      needsRenderRef.current = true;
     };
     window.addEventListener('resize', handleResize);
 
-    // Animation loop
+    // Render-on-demand animation loop: only redraws when something has changed.
+    let rafId;
     const animate = () => {
-      requestAnimationFrame(animate);
-      renderer.render(scene, camera);
+      rafId = requestAnimationFrame(animate);
+      if (needsRenderRef.current) {
+        needsRenderRef.current = false;
+        renderer.render(scene, camera);
+      }
     };
     animate();
 
@@ -66,26 +114,41 @@ export function ColorVisualization() {
 
     // Cleanup
     return () => {
+      cancelAnimationFrame(rafId);
       window.removeEventListener('resize', handleResize);
       if (container && renderer.domElement.parentNode === container) {
         container.removeChild(renderer.domElement);
       }
       renderer.dispose();
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const setupControls = (camera, renderer) => {
+  const setupControls = (camera, renderer, pickAtScreen) => {
     const canvas = renderer.domElement;
     let isDragging = false;
     let previousMousePosition = { x: 0, y: 0 };
+    let previousTouchDistance = 0;
+    let pressStart = { x: 0, y: 0 };
+    let movedDuringPress = false;
+    const CLICK_MOVE_THRESHOLD = 5;
 
+    // Mouse controls
     canvas.addEventListener('mousedown', (e) => {
       isDragging = true;
       previousMousePosition = { x: e.clientX, y: e.clientY };
+      pressStart = { x: e.clientX, y: e.clientY };
+      movedDuringPress = false;
     });
 
     canvas.addEventListener('mousemove', (e) => {
       if (isDragging) {
+        if (
+          Math.hypot(e.clientX - pressStart.x, e.clientY - pressStart.y) >
+          CLICK_MOVE_THRESHOLD
+        ) {
+          movedDuringPress = true;
+        }
         const deltaX = e.clientX - previousMousePosition.x;
         const deltaY = e.clientY - previousMousePosition.y;
 
@@ -94,19 +157,23 @@ export function ColorVisualization() {
         const phi = Math.acos(camera.position.y / radius);
 
         const newTheta = theta - deltaX * 0.005;
-        const newPhi = Math.max(0.1, Math.min(Math.PI - 0.1, phi + deltaY * 0.005));
+        const newPhi = Math.max(0.1, Math.min(Math.PI - 0.1, phi - deltaY * 0.005));
 
         camera.position.x = radius * Math.sin(newPhi) * Math.sin(newTheta);
         camera.position.y = radius * Math.cos(newPhi);
         camera.position.z = radius * Math.sin(newPhi) * Math.cos(newTheta);
         camera.lookAt(0, 50, 0);
+        needsRenderRef.current = true;
 
         previousMousePosition = { x: e.clientX, y: e.clientY };
       }
     });
 
-    canvas.addEventListener('mouseup', () => {
+    canvas.addEventListener('mouseup', (e) => {
       isDragging = false;
+      if (!movedDuringPress && pickAtScreen) {
+        pickAtScreen(e.clientX, e.clientY);
+      }
     });
 
     canvas.addEventListener('wheel', (e) => {
@@ -120,12 +187,130 @@ export function ColorVisualization() {
       if (newRadius >= minRadius && newRadius <= maxRadius) {
         const direction = camera.position.clone().normalize();
         camera.position.copy(direction.multiplyScalar(newRadius));
+        needsRenderRef.current = true;
       }
     }, { passive: false });
+
+    // Touch controls
+    canvas.addEventListener('touchstart', (e) => {
+      if (e.touches.length === 1) {
+        isDragging = true;
+        previousMousePosition = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+        pressStart = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+        movedDuringPress = false;
+      } else if (e.touches.length === 2) {
+        isDragging = false;
+        const touch1 = e.touches[0];
+        const touch2 = e.touches[1];
+        const dx = touch2.clientX - touch1.clientX;
+        const dy = touch2.clientY - touch1.clientY;
+        previousTouchDistance = Math.sqrt(dx * dx + dy * dy);
+      }
+    });
+
+    canvas.addEventListener('touchmove', (e) => {
+      e.preventDefault();
+      
+      if (e.touches.length === 1 && isDragging) {
+        // Single finger - pan/rotate
+        if (
+          Math.hypot(
+            e.touches[0].clientX - pressStart.x,
+            e.touches[0].clientY - pressStart.y
+          ) > CLICK_MOVE_THRESHOLD
+        ) {
+          movedDuringPress = true;
+        }
+        const deltaX = e.touches[0].clientX - previousMousePosition.x;
+        const deltaY = e.touches[0].clientY - previousMousePosition.y;
+
+        const radius = camera.position.length();
+        const theta = Math.atan2(camera.position.x, camera.position.z);
+        const phi = Math.acos(camera.position.y / radius);
+
+        const newTheta = theta - deltaX * 0.005;
+        const newPhi = Math.max(0.1, Math.min(Math.PI - 0.1, phi - deltaY * 0.005));
+
+        camera.position.x = radius * Math.sin(newPhi) * Math.sin(newTheta);
+        camera.position.y = radius * Math.cos(newPhi);
+        camera.position.z = radius * Math.sin(newPhi) * Math.cos(newTheta);
+        camera.lookAt(0, 50, 0);
+        needsRenderRef.current = true;
+
+        previousMousePosition = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+      } else if (e.touches.length === 2) {
+        // Two fingers - pinch zoom
+        movedDuringPress = true;
+        const touch1 = e.touches[0];
+        const touch2 = e.touches[1];
+        const dx = touch2.clientX - touch1.clientX;
+        const dy = touch2.clientY - touch1.clientY;
+        const currentDistance = Math.sqrt(dx * dx + dy * dy);
+
+        if (previousTouchDistance > 0) {
+          const zoomSpeed = 0.5;
+          const distanceDelta = currentDistance - previousTouchDistance;
+          const currentRadius = camera.position.length();
+          const newRadius = currentRadius - distanceDelta * zoomSpeed;
+          const minRadius = 50;
+          const maxRadius = 500;
+
+          if (newRadius >= minRadius && newRadius <= maxRadius) {
+            const direction = camera.position.clone().normalize();
+            camera.position.copy(direction.multiplyScalar(newRadius));
+            needsRenderRef.current = true;
+          }
+        }
+
+        previousTouchDistance = currentDistance;
+      }
+    }, { passive: false });
+
+    canvas.addEventListener('touchend', (e) => {
+      // If the press never moved past the click threshold, treat it as a tap.
+      // changedTouches has the just-lifted finger position.
+      if (!movedDuringPress && e.changedTouches.length === 1 && pickAtScreen) {
+        const t = e.changedTouches[0];
+        pickAtScreen(t.clientX, t.clientY);
+      }
+      isDragging = false;
+      previousTouchDistance = 0;
+      movedDuringPress = false;
+    });
+  };
+
+  const makeAxisLabel = (text, color) => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 256;
+    canvas.height = 128;
+    const ctx = canvas.getContext('2d');
+    ctx.font = 'bold 80px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    // Black stroke for legibility on any background
+    ctx.lineWidth = 8;
+    ctx.strokeStyle = '#000';
+    ctx.strokeText(text, 128, 64);
+    ctx.fillStyle = color;
+    ctx.fillText(text, 128, 64);
+
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.minFilter = THREE.LinearFilter;
+    texture.magFilter = THREE.LinearFilter;
+
+    const material = new THREE.SpriteMaterial({
+      map: texture,
+      transparent: true,
+      depthTest: false // always visible above particles
+    });
+    const sprite = new THREE.Sprite(material);
+    sprite.scale.set(24, 12, 1);
+    return sprite;
   };
 
   const addAxes = (scene) => {
     const axesLength = 150;
+    const labelOffset = 14;
 
     // X axis (a*) - Red
     const xGeometry = new THREE.BufferGeometry();
@@ -135,6 +320,9 @@ export function ColorVisualization() {
     ));
     const xLine = new THREE.Line(xGeometry, new THREE.LineBasicMaterial({ color: 0xff0000 }));
     scene.add(xLine);
+    const xLabel = makeAxisLabel('a*', '#ff6b6b');
+    xLabel.position.set(axesLength + labelOffset, 0, 0);
+    scene.add(xLabel);
 
     // Y axis (L*) - Green
     const yGeometry = new THREE.BufferGeometry();
@@ -144,6 +332,9 @@ export function ColorVisualization() {
     ));
     const yLine = new THREE.Line(yGeometry, new THREE.LineBasicMaterial({ color: 0x00ff00 }));
     scene.add(yLine);
+    const yLabel = makeAxisLabel('L*', '#6bff6b');
+    yLabel.position.set(0, axesLength + labelOffset, 0);
+    scene.add(yLabel);
 
     // Z axis (b*) - Blue
     const zGeometry = new THREE.BufferGeometry();
@@ -153,6 +344,151 @@ export function ColorVisualization() {
     ));
     const zLine = new THREE.Line(zGeometry, new THREE.LineBasicMaterial({ color: 0x0000ff }));
     scene.add(zLine);
+    const zLabel = makeAxisLabel('b*', '#6b9eff');
+    zLabel.position.set(0, 0, axesLength + labelOffset);
+    scene.add(zLabel);
+  };
+
+  const deltaE2000 = (L1, a1, b1, L2, a2, b2) => {
+    const kL = 1,
+          kC = 1,
+          kH = 1;
+
+    const C1 = Math.hypot(a1, b1);
+    const C2 = Math.hypot(a2, b2);
+
+    const Cbar = (C1 + C2) / 2;
+    const Cbar7 = Math.pow(Cbar, 7);
+
+    const G = 0.5 * (1 - Math.sqrt(Cbar7 / (Cbar7 + Math.pow(25, 7))));
+
+    const a1p = (1 + G) * a1;
+    const a2p = (1 + G) * a2;
+
+    const C1p = Math.hypot(a1p, b1);
+    const C2p = Math.hypot(a2p, b2);
+
+    const h1p = (Math.atan2(b1, a1p) * 180) / Math.PI;
+    const h2p = (Math.atan2(b2, a2p) * 180) / Math.PI;
+
+    const h1pp = h1p < 0 ? h1p + 360 : h1p;
+    const h2pp = h2p < 0 ? h2p + 360 : h2p;
+
+    const dLp = L2 - L1;
+    const dCp = C2p - C1p;
+
+    let dhp = 0;
+
+    if (C1p * C2p === 0) {
+        dhp = 0;
+    } else if (Math.abs(h2pp - h1pp) <= 180) {
+        dhp = h2pp - h1pp;
+    } else if (h2pp - h1pp > 180) {
+        dhp = h2pp - h1pp - 360;
+    } else {
+        dhp = h2pp - h1pp + 360;
+    }
+
+    const dHp =
+        2 * Math.sqrt(C1p * C2p) *
+        Math.sin((dhp * Math.PI) / 360);
+
+    const Lbar = (L1 + L2) / 2;
+    const Cbarp = (C1p + C2p) / 2;
+
+    let hbarp;
+
+    if (C1p * C2p === 0) {
+        hbarp = h1pp + h2pp;
+    } else if (Math.abs(h1pp - h2pp) <= 180) {
+        hbarp = (h1pp + h2pp) / 2;
+    } else {
+        hbarp =
+            h1pp + h2pp < 360
+                ? (h1pp + h2pp + 360) / 2
+                : (h1pp + h2pp - 360) / 2;
+    }
+
+    const T =
+        1
+        - 0.17 * Math.cos(((hbarp - 30) * Math.PI) / 180)
+        + 0.24 * Math.cos(((2 * hbarp) * Math.PI) / 180)
+        + 0.32 * Math.cos(((3 * hbarp + 6) * Math.PI) / 180)
+        - 0.20 * Math.cos(((4 * hbarp - 63) * Math.PI) / 180);
+
+    const dTheta =
+        30 * Math.exp(-Math.pow((hbarp - 275) / 25, 2));
+
+    const RC =
+        2 *
+        Math.sqrt(
+            Math.pow(Cbarp, 7) /
+            (Math.pow(Cbarp, 7) + Math.pow(25, 7))
+        );
+
+    const SL =
+        1 +
+        (0.015 * Math.pow(Lbar - 50, 2)) /
+        Math.sqrt(20 + Math.pow(Lbar - 50, 2));
+
+    const SC = 1 + 0.045 * Cbarp;
+    const SH = 1 + 0.015 * Cbarp * T;
+
+    const RT =
+        -Math.sin((2 * dTheta * Math.PI) / 180) * RC;
+
+    return Math.sqrt(
+        Math.pow(dLp / (kL * SL), 2) +
+        Math.pow(dCp / (kC * SC), 2) +
+        Math.pow(dHp / (kH * SH), 2) +
+        RT *
+        (dCp / (kC * SC)) *
+        (dHp / (kH * SH))
+    );
+  };
+
+  const addHighlightMarker = (x, y, z) => {
+    const scene = sceneRef.current;
+    
+    // Remove old marker if exists
+    if (highlightMarkerRef.current) {
+      scene.remove(highlightMarkerRef.current);
+    }
+
+    // Create a sphere marker
+    const geometry = new THREE.SphereGeometry(3, 32, 32);
+    const material = new THREE.MeshBasicMaterial({ color: 0xffff00 });
+    const marker = new THREE.Mesh(geometry, material);
+    marker.position.set(x, y, z);
+    scene.add(marker);
+    highlightMarkerRef.current = marker;
+    needsRenderRef.current = true;
+  };
+
+  const handleColorSelect = (color) => {
+    setSelectedColor(color);
+    
+    // Add highlight marker
+    const x = (color.a / 127) * 150;
+    const y = color.l;
+    const z = (color.b / 127) * 150;
+    addHighlightMarker(x, y, z);
+
+    // Sort colors by similarity
+    const sorted = colorsRef.current.map(c => {
+      const distance = deltaE2000(color.l, color.a, color.b, c.l, c.a, c.b);
+      // Map ΔE2000 to a similarity percentage:
+      //   ΔE = 0   -> 100% (identical)
+      //   ΔE >= 100 -> 0%  (max perceptual difference in LAB)
+      const similarity = Math.max(0, 100 - distance);
+      return {
+        ...c,
+        distance,
+        similarity
+      };
+    }).sort((a, b) => a.distance - b.distance);
+
+    setSortedColors(sorted);
   };
 
   const loadCSVFile = async () => {
@@ -265,13 +601,14 @@ export function ColorVisualization() {
 
     // Create points mesh
     const particles = new THREE.Points(geometry, pointsMaterial);
+    particles.userData.visibleColors = colors;
     particlesRef.current = particles;
     scene.add(particles);
+    needsRenderRef.current = true;
 
-    // Update stats
-    if (statsRef.current) {
-      statsRef.current.textContent = `Loaded: ${colors.length} colors`;
-    }
+    // Store colors in ref and state
+    colorsRef.current = colors;
+    setSortedColors(colors);
   };
 
   const showError = (message) => {
@@ -281,18 +618,451 @@ export function ColorVisualization() {
     }, 5000);
   };
 
+  // Derived filtered list: name/hex search + similarity threshold (memoized so
+  // we don't re-walk 30k colors on unrelated re-renders).
+  const filteredColors = useMemo(() => {
+    const normalizedSearch = searchTerm.trim().toLowerCase();
+    const searchHex = normalizedSearch.replace(/^#/, '');
+    const thresholdValue = parseFloat(similarityThreshold);
+    const hasThreshold = !Number.isNaN(thresholdValue);
+    const hasSearch = normalizedSearch.length > 0;
+    const hasSelection = !!selectedColor;
+
+    const applyThreshold = filterByThreshold && hasSelection && hasThreshold;
+
+    let result;
+    if (!hasSearch && !applyThreshold) {
+      result = sortedColors;
+    } else {
+      result = sortedColors.filter(color => {
+        if (hasSearch) {
+          const nameMatch = color.name.toLowerCase().includes(normalizedSearch);
+          const hexMatch = color.hex.toLowerCase().replace(/^#/, '').includes(searchHex);
+          if (!nameMatch && !hexMatch) return false;
+        }
+        if (applyThreshold) {
+          if (color.similarity === undefined || color.similarity < thresholdValue) {
+            return false;
+          }
+        }
+        return true;
+      });
+    }
+
+    return reverseSort ? result.slice().reverse() : result;
+  }, [sortedColors, searchTerm, similarityThreshold, selectedColor, reverseSort, filterByThreshold]);
+
+  // Reset the display window whenever the filter or sort changes so the list
+  // always starts at "top 100" instead of growing unbounded.
+  useEffect(() => {
+    setDisplayLimit(INITIAL_DISPLAY_LIMIT);
+    if (listScrollRef.current) {
+      listScrollRef.current.scrollTop = 0;
+    }
+  }, [searchTerm, similarityThreshold, selectedColor, reverseSort, filterByThreshold]);
+
+  // Update the point material size and the raycaster's hit tolerance whenever
+  // the user adjusts the slider in the settings tab.
+  useEffect(() => {
+    if (pointsMaterialRef.current) {
+      pointsMaterialRef.current.size = pointSize;
+      needsRenderRef.current = true;
+    }
+    if (highlightMaterialRef.current) {
+      highlightMaterialRef.current.size = pointSize * 2.2;
+      needsRenderRef.current = true;
+    }
+    if (raycasterRef.current) {
+      raycasterRef.current.params.Points.threshold = Math.max(2, pointSize * 1.5);
+    }
+  }, [pointSize]);
+
+  // Filter the 3D particle cloud when "Hide outliers" is on. We rebuild the
+  // BufferGeometry from scratch with only the colors that meet the threshold;
+  // when the toggle is off (or there's no reference/threshold) we restore the
+  // full point cloud. `userData.filtered` lets us skip work when the cloud is
+  // already in the right state.
+  useEffect(() => {
+    const particles = particlesRef.current;
+    if (!particles) return;
+
+    const thresholdValue = parseFloat(similarityThreshold);
+    const hasThreshold = !Number.isNaN(thresholdValue);
+    const shouldFilter = hideOutliers && !!selectedColor && hasThreshold;
+
+    const wasFiltered = particles.userData.filtered === true;
+    if (!shouldFilter && !wasFiltered) {
+      return; // already showing everything — nothing to do
+    }
+
+    const source = shouldFilter
+      ? sortedColors.filter(c => c.similarity !== undefined && c.similarity >= thresholdValue)
+      : colorsRef.current;
+
+    const n = source.length;
+    const positions = new Float32Array(n * 3);
+    const colorsArr = new Float32Array(n * 3);
+
+    for (let i = 0; i < n; i++) {
+      const c = source[i];
+      positions[i * 3] = (c.a / 127) * 150;
+      positions[i * 3 + 1] = c.l;
+      positions[i * 3 + 2] = (c.b / 127) * 150;
+
+      const hex = c.hex.replace('#', '');
+      colorsArr[i * 3] = parseInt(hex.substring(0, 2), 16) / 255;
+      colorsArr[i * 3 + 1] = parseInt(hex.substring(2, 4), 16) / 255;
+      colorsArr[i * 3 + 2] = parseInt(hex.substring(4, 6), 16) / 255;
+    }
+
+    const newGeom = new THREE.BufferGeometry();
+    newGeom.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    newGeom.setAttribute('color', new THREE.BufferAttribute(colorsArr, 3));
+
+    particles.geometry.dispose();
+    particles.geometry = newGeom;
+    particles.userData.filtered = shouldFilter;
+    particles.userData.visibleColors = source;
+    needsRenderRef.current = true;
+  }, [hideOutliers, similarityThreshold, selectedColor, sortedColors]);
+
+  const visibleColors = useMemo(
+    () => filteredColors.slice(0, displayLimit),
+    [filteredColors, displayLimit]
+  );
+  const hiddenCount = Math.max(0, filteredColors.length - displayLimit);
+
+  const handleListScroll = (e) => {
+    if (hiddenCount === 0) return;
+    const el = e.currentTarget;
+    if (el.scrollHeight - el.scrollTop - el.clientHeight < SCROLL_LOAD_THRESHOLD_PX) {
+      setDisplayLimit(d => d + DISPLAY_INCREMENT);
+    }
+  };
+
   return (
     <div className="visualization-container">
       <div ref={containerRef} className="scene-container" />
 
-      <div className="info-panel">
-        <h3>LAB 3D Space</h3>
-        <p><strong>X-axis:</strong> a* (-128 to 127)</p>
-        <p><strong>Y-axis:</strong> L* (0 to 100)</p>
-        <p><strong>Z-axis:</strong> b* (-128 to 127)</p>
-        <p style={{ marginTop: '0.5rem', fontSize: '0.8rem' }}>Drag to rotate, scroll to zoom</p>
-        <div ref={statsRef} id="stats" style={{ marginTop: '0.5rem', color: '#888' }}></div>
-      </div>
+      {sortedColors.length > 0 && !panelCollapsed && (() => {
+        const thresholdValueNum = parseFloat(similarityThreshold);
+        const hasActiveThreshold = !Number.isNaN(thresholdValueNum) && !!selectedColor;
+        return (
+          <div className="color-list-panel">
+            <div className="panel-header">
+              <div className="panel-tabs">
+                <button
+                  type="button"
+                  className={`panel-tab ${activeTab === 'colors' ? 'active' : ''}`}
+                  onClick={() => setActiveTab('colors')}
+                >
+                  Colors
+                </button>
+                <button
+                  type="button"
+                  className={`panel-tab ${activeTab === 'settings' ? 'active' : ''}`}
+                  onClick={() => setActiveTab('settings')}
+                >
+                  Settings
+                </button>
+              </div>
+              <button
+                type="button"
+                className="panel-minimize"
+                onClick={() => setPanelCollapsed(true)}
+                title="Minimize panel"
+                aria-label="Minimize panel"
+              >
+                −
+              </button>
+            </div>
+
+            {activeTab === 'colors' && (
+              <div className="colors-tab">
+                {selectedColor ? (
+                  <div className="reference-color">
+                    <div className="reference-label">Reference color</div>
+                    <div className="reference-body">
+                      <div
+                        className="reference-swatch"
+                        style={{ backgroundColor: selectedColor.hex }}
+                      />
+                      <div className="reference-info">
+                        <div className="reference-name">{selectedColor.name}</div>
+                        <div className="reference-hex">{selectedColor.hex.toUpperCase()}</div>
+                        <div className="reference-lab">
+                          L: {selectedColor.l.toFixed(1)},
+                          a: {selectedColor.a.toFixed(1)},
+                          b: {selectedColor.b.toFixed(1)}
+                        </div>
+                      </div>
+                      <button
+                        className="reference-clear"
+                        onClick={() => {
+                          setSelectedColor(null);
+                          setSortedColors(colorsRef.current);
+                          if (highlightMarkerRef.current && sceneRef.current) {
+                            sceneRef.current.remove(highlightMarkerRef.current);
+                            highlightMarkerRef.current = null;
+                            needsRenderRef.current = true;
+                          }
+                        }}
+                        title="Clear reference color"
+                        aria-label="Clear reference color"
+                      >
+                        ×
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="reference-empty">
+                    No reference color selected — click a color below or tap a point in the plot.
+                  </div>
+                )}
+
+                <div className="filter-controls">
+                  <input
+                    type="text"
+                    className="filter-input"
+                    placeholder="Search by name or hex (e.g. crimson or #ff0033)"
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                  />
+                  <div className="threshold-section">
+                    <div className="threshold-header">
+                      <label className="threshold-label" htmlFor="similarity-threshold-number">
+                        Min similarity %
+                      </label>
+                      <input
+                        id="similarity-threshold-number"
+                        type="number"
+                        className="filter-input filter-input-compact"
+                        value={similarityThreshold}
+                        min="0"
+                        max="100"
+                        step="0.01"
+                        onChange={(e) => setSimilarityThreshold(e.target.value)}
+                        disabled={!selectedColor}
+                      />
+                    </div>
+                    <input
+                      type="range"
+                      className="threshold-slider"
+                      min="0"
+                      max="100"
+                      step="0.01"
+                      value={parseFloat(similarityThreshold) || 0}
+                      onChange={(e) => setSimilarityThreshold(e.target.value)}
+                      disabled={!selectedColor}
+                      aria-label="Min similarity percentage"
+                    />
+                  </div>
+
+                  <div className="filter-options">
+                    <label
+                      className={`option-check ${!selectedColor ? 'disabled' : ''}`}
+                      title="Apply the similarity threshold to the list of colors below"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={filterByThreshold}
+                        onChange={(e) => setFilterByThreshold(e.target.checked)}
+                        disabled={!selectedColor}
+                      />
+                      <span>Filter colors</span>
+                    </label>
+                    <label
+                      className={`option-check ${!selectedColor ? 'disabled' : ''}`}
+                      title={
+                        selectedColor
+                          ? 'Hide points in the 3D plot that don’t meet the threshold'
+                          : 'Select a reference color to enable filtering'
+                      }
+                    >
+                      <input
+                        type="checkbox"
+                        checked={hideOutliers}
+                        onChange={(e) => setHideOutliers(e.target.checked)}
+                        disabled={!selectedColor}
+                      />
+                      <span>Hide Plot outliers</span>
+                    </label>
+                  </div>
+                  <div className="filter-row-bottom">
+                    <button
+                      type="button"
+                      className="sort-toggle"
+                      onClick={() => setReverseSort(v => !v)}
+                      title="Toggle sort order"
+                    >
+                      {reverseSort ? '↑ Least similar' : '↓ Most similar'}
+                    </button>
+                    <div className="filter-stats">
+                      {visibleColors.length} / {filteredColors.length}
+                    </div>
+                  </div>
+                </div>
+
+                <div
+                  className="color-list"
+                  ref={listScrollRef}
+                  onScroll={handleListScroll}
+                >
+                  {filteredColors.length === 0 ? (
+                    <div className="color-empty">No colors match the current filters.</div>
+                  ) : (
+                    <>
+                      {visibleColors.map((color, idx) => {
+                        const isReference = selectedColor?.name === color.name && selectedColor?.hex === color.hex;
+                        const withinThreshold =
+                          hasActiveThreshold &&
+                          color.similarity !== undefined &&
+                          color.similarity >= thresholdValueNum;
+                        const classes = [
+                          'color-item',
+                          isReference ? 'selected' : '',
+                          withinThreshold ? 'within-threshold' : ''
+                        ].filter(Boolean).join(' ');
+                        return (
+                          <div
+                            key={`${color.name}-${color.hex}-${idx}`}
+                            className={classes}
+                            onClick={() => handleColorSelect(color)}
+                          >
+                            <div
+                              className="color-swatch"
+                              style={{ backgroundColor: color.hex }}
+                            />
+                            <div className="color-info">
+                              <div className="color-name">{color.name}</div>
+                              <div className="color-hex">{color.hex.toUpperCase()}</div>
+                            </div>
+                            {selectedColor && color.similarity !== undefined && (
+                              <div className="color-similarity">
+                                {color.similarity.toFixed(2)}%
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                      {hiddenCount > 0 && (
+                        <button
+                          type="button"
+                          className="load-more"
+                          onClick={() => setDisplayLimit(d => d + DISPLAY_INCREMENT)}
+                        >
+                          Show {Math.min(DISPLAY_INCREMENT, hiddenCount)} more
+                          <span className="load-more-remaining"> ({hiddenCount} remaining)</span>
+                        </button>
+                      )}
+                    </>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {activeTab === 'settings' && (
+              <div className="settings-content">
+                <div className="setting-row">
+                  <div className="setting-header">
+                    <label className="setting-label" htmlFor="point-size-slider">
+                      Point size
+                    </label>
+                    <span className="setting-value">{pointSize.toFixed(1)}</span>
+                  </div>
+                  <input
+                    id="point-size-slider"
+                    type="range"
+                    className="threshold-slider"
+                    min="0.3"
+                    max="6"
+                    step="0.1"
+                    value={pointSize}
+                    onChange={(e) => setPointSize(parseFloat(e.target.value))}
+                  />
+                  <div className="setting-hint">
+                    Adjust how large the points appear in the 3D plot.
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })()}
+
+      {sortedColors.length > 0 && panelCollapsed && (
+        <button
+          type="button"
+          className="panel-show"
+          onClick={() => setPanelCollapsed(false)}
+          title="Show colors panel"
+        >
+          ☰ Colors
+        </button>
+      )}
+
+      {inspectedColor && (() => {
+        let inspectedSimilarity = null;
+        if (selectedColor) {
+          const d = deltaE2000(
+            selectedColor.l, selectedColor.a, selectedColor.b,
+            inspectedColor.l, inspectedColor.a, inspectedColor.b
+          );
+          inspectedSimilarity = Math.max(0, 100 - d);
+        }
+        const isAlreadyReference =
+          selectedColor &&
+          selectedColor.name === inspectedColor.name &&
+          selectedColor.hex === inspectedColor.hex;
+        return (
+          <div className="inspected-panel">
+            <div className="inspected-header">
+              <span className="inspected-title">Inspected color</span>
+              <button
+                type="button"
+                className="inspected-close"
+                onClick={() => setInspectedColor(null)}
+                aria-label="Close"
+                title="Close"
+              >
+                ×
+              </button>
+            </div>
+            <div className="inspected-body">
+              <div
+                className="inspected-swatch"
+                style={{ backgroundColor: inspectedColor.hex }}
+              />
+              <div className="inspected-info">
+                <div className="inspected-name">{inspectedColor.name}</div>
+                <div className="inspected-hex">{inspectedColor.hex.toUpperCase()}</div>
+                <div className="inspected-lab">
+                  L: {inspectedColor.l.toFixed(1)},
+                  a: {inspectedColor.a.toFixed(1)},
+                  b: {inspectedColor.b.toFixed(1)}
+                </div>
+                {inspectedSimilarity !== null && (
+                  <div className="inspected-similarity">
+                    {inspectedSimilarity.toFixed(2)}% vs reference
+                  </div>
+                )}
+              </div>
+            </div>
+            {!isAlreadyReference && (
+              <button
+                type="button"
+                className="inspected-promote"
+                onClick={() => {
+                  handleColorSelect(inspectedColor);
+                  setInspectedColor(null);
+                }}
+              >
+                Use as reference
+              </button>
+            )}
+          </div>
+        );
+      })()}
 
       {error && (
         <div className="error">
