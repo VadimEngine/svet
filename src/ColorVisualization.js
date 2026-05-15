@@ -6,6 +6,33 @@ const INITIAL_DISPLAY_LIMIT = 100;
 const DISPLAY_INCREMENT = 100;
 const SCROLL_LOAD_THRESHOLD_PX = 250;
 
+function LabDisplay({ l, a, b }) {
+  const outline = '0 0 4px #000, 0 0 8px rgba(0,0,0,0.6)';
+
+  // L*: lightness mapped to grayscale — dark gray at 0, white at 100
+  const lColor = `hsl(0, 0%, ${Math.max(30, l)}%)`;
+
+  // a*: neutral at 0, green toward negative, red toward positive
+  const aSat = Math.min(100, Math.abs(a) * 1.6);
+  const aColor = `hsl(${a >= 0 ? 4 : 122}, ${aSat}%, 62%)`;
+
+  // b*: neutral at 0, blue toward negative, yellow toward positive
+  const bSat = Math.min(100, Math.abs(b) * 1.6);
+  const bColor = `hsl(${b >= 0 ? 52 : 222}, ${bSat}%, ${b >= 0 ? 60 : 64}%)`;
+
+  const s = (color) => ({ color, textShadow: outline });
+
+  return (
+    <>
+      <span style={s(lColor)}>L:{l.toFixed(1)}</span>
+      {' '}
+      <span style={s(aColor)}>a:{a.toFixed(1)}</span>
+      {' '}
+      <span style={s(bColor)}>b:{b.toFixed(1)}</span>
+    </>
+  );
+}
+
 export function ColorVisualization() {
   const containerRef = useRef(null);
   const sceneRef = useRef(null);
@@ -16,6 +43,7 @@ export function ColorVisualization() {
   const highlightMarkerRef = useRef(null);
   const highlightCloudRef = useRef(null);
   const highlightMaterialRef = useRef(null);
+  const orbitTargetRef = useRef(null);
   const colorsRef = useRef([]);
   const needsRenderRef = useRef(true);
   const listScrollRef = useRef(null);
@@ -38,6 +66,9 @@ export function ColorVisualization() {
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
+
+    // Orbit target (the point the camera revolves around / looks at)
+    orbitTargetRef.current = new THREE.Vector3(0, 50, 0);
 
     // Scene setup
     const scene = new THREE.Scene();
@@ -129,9 +160,40 @@ export function ColorVisualization() {
     let isDragging = false;
     let previousMousePosition = { x: 0, y: 0 };
     let previousTouchDistance = 0;
+    let previousTouchMidpoint = { x: 0, y: 0 };
     let pressStart = { x: 0, y: 0 };
     let movedDuringPress = false;
     const CLICK_MOVE_THRESHOLD = 5;
+    const MIN_RADIUS = 50;
+    const MAX_RADIUS = 500;
+
+    const getOrbitParams = () => {
+      const target = orbitTargetRef.current;
+      const toCamera = camera.position.clone().sub(target);
+      const radius = toCamera.length();
+      const theta = Math.atan2(toCamera.x, toCamera.z);
+      const phi = Math.acos(Math.max(-1, Math.min(1, toCamera.y / radius)));
+      return { radius, theta, phi };
+    };
+
+    const applyOrbit = (radius, theta, phi) => {
+      const target = orbitTargetRef.current;
+      camera.position.x = target.x + radius * Math.sin(phi) * Math.sin(theta);
+      camera.position.y = target.y + radius * Math.cos(phi);
+      camera.position.z = target.z + radius * Math.sin(phi) * Math.cos(theta);
+      camera.lookAt(target);
+      needsRenderRef.current = true;
+    };
+
+    const applyZoom = (distanceDelta, zoomSpeed) => {
+      const target = orbitTargetRef.current;
+      const toCamera = camera.position.clone().sub(target);
+      const currentRadius = toCamera.length();
+      const newRadius = Math.max(MIN_RADIUS, Math.min(MAX_RADIUS, currentRadius - distanceDelta * zoomSpeed));
+      camera.position.copy(target).addScaledVector(toCamera.normalize(), newRadius);
+      camera.lookAt(target);
+      needsRenderRef.current = true;
+    };
 
     // Mouse controls
     canvas.addEventListener('mousedown', (e) => {
@@ -142,51 +204,31 @@ export function ColorVisualization() {
     });
 
     canvas.addEventListener('mousemove', (e) => {
-      if (isDragging) {
-        if (
-          Math.hypot(e.clientX - pressStart.x, e.clientY - pressStart.y) >
-          CLICK_MOVE_THRESHOLD
-        ) {
-          movedDuringPress = true;
-        }
-        const deltaX = e.clientX - previousMousePosition.x;
-        const deltaY = e.clientY - previousMousePosition.y;
-
-        const radius = camera.position.length();
-        const theta = Math.atan2(camera.position.x, camera.position.z);
-        const phi = Math.acos(camera.position.y / radius);
-
-        const newTheta = theta - deltaX * 0.005;
-        const newPhi = Math.max(0.1, Math.min(Math.PI - 0.1, phi - deltaY * 0.005));
-
-        camera.position.x = radius * Math.sin(newPhi) * Math.sin(newTheta);
-        camera.position.y = radius * Math.cos(newPhi);
-        camera.position.z = radius * Math.sin(newPhi) * Math.cos(newTheta);
-        camera.lookAt(0, 50, 0);
-        needsRenderRef.current = true;
-
-        previousMousePosition = { x: e.clientX, y: e.clientY };
+      if (!isDragging) return;
+      if (Math.hypot(e.clientX - pressStart.x, e.clientY - pressStart.y) > CLICK_MOVE_THRESHOLD) {
+        movedDuringPress = true;
       }
+      const deltaX = e.clientX - previousMousePosition.x;
+      const deltaY = e.clientY - previousMousePosition.y;
+      const { radius, theta, phi } = getOrbitParams();
+      applyOrbit(radius, theta - deltaX * 0.005, Math.max(0.1, Math.min(Math.PI - 0.1, phi - deltaY * 0.005)));
+      previousMousePosition = { x: e.clientX, y: e.clientY };
     });
 
     canvas.addEventListener('mouseup', (e) => {
       isDragging = false;
-      if (!movedDuringPress && pickAtScreen) {
-        pickAtScreen(e.clientX, e.clientY);
-      }
+      if (!movedDuringPress && pickAtScreen) pickAtScreen(e.clientX, e.clientY);
     });
 
     canvas.addEventListener('wheel', (e) => {
       e.preventDefault();
-      const currentRadius = camera.position.length();
-      const zoomSpeed = 0.1;
-      const newRadius = currentRadius + e.deltaY * zoomSpeed;
-      const minRadius = 50;
-      const maxRadius = 500;
-
-      if (newRadius >= minRadius && newRadius <= maxRadius) {
-        const direction = camera.position.clone().normalize();
-        camera.position.copy(direction.multiplyScalar(newRadius));
+      const target = orbitTargetRef.current;
+      const toCamera = camera.position.clone().sub(target);
+      const currentRadius = toCamera.length();
+      const newRadius = currentRadius + e.deltaY * 0.1;
+      if (newRadius >= MIN_RADIUS && newRadius <= MAX_RADIUS) {
+        camera.position.copy(target).addScaledVector(toCamera.normalize(), newRadius);
+        camera.lookAt(target);
         needsRenderRef.current = true;
       }
     }, { passive: false });
@@ -200,82 +242,78 @@ export function ColorVisualization() {
         movedDuringPress = false;
       } else if (e.touches.length === 2) {
         isDragging = false;
-        const touch1 = e.touches[0];
-        const touch2 = e.touches[1];
-        const dx = touch2.clientX - touch1.clientX;
-        const dy = touch2.clientY - touch1.clientY;
-        previousTouchDistance = Math.sqrt(dx * dx + dy * dy);
+        const t1 = e.touches[0];
+        const t2 = e.touches[1];
+        previousTouchDistance = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
+        previousTouchMidpoint = {
+          x: (t1.clientX + t2.clientX) / 2,
+          y: (t1.clientY + t2.clientY) / 2,
+        };
       }
     });
 
     canvas.addEventListener('touchmove', (e) => {
       e.preventDefault();
-      
+
       if (e.touches.length === 1 && isDragging) {
-        // Single finger - pan/rotate
-        if (
-          Math.hypot(
-            e.touches[0].clientX - pressStart.x,
-            e.touches[0].clientY - pressStart.y
-          ) > CLICK_MOVE_THRESHOLD
-        ) {
+        if (Math.hypot(e.touches[0].clientX - pressStart.x, e.touches[0].clientY - pressStart.y) > CLICK_MOVE_THRESHOLD) {
           movedDuringPress = true;
         }
         const deltaX = e.touches[0].clientX - previousMousePosition.x;
         const deltaY = e.touches[0].clientY - previousMousePosition.y;
-
-        const radius = camera.position.length();
-        const theta = Math.atan2(camera.position.x, camera.position.z);
-        const phi = Math.acos(camera.position.y / radius);
-
-        const newTheta = theta - deltaX * 0.005;
-        const newPhi = Math.max(0.1, Math.min(Math.PI - 0.1, phi - deltaY * 0.005));
-
-        camera.position.x = radius * Math.sin(newPhi) * Math.sin(newTheta);
-        camera.position.y = radius * Math.cos(newPhi);
-        camera.position.z = radius * Math.sin(newPhi) * Math.cos(newTheta);
-        camera.lookAt(0, 50, 0);
-        needsRenderRef.current = true;
-
+        const { radius, theta, phi } = getOrbitParams();
+        applyOrbit(radius, theta - deltaX * 0.005, Math.max(0.1, Math.min(Math.PI - 0.1, phi - deltaY * 0.005)));
         previousMousePosition = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+
       } else if (e.touches.length === 2) {
-        // Two fingers - pinch zoom
         movedDuringPress = true;
-        const touch1 = e.touches[0];
-        const touch2 = e.touches[1];
-        const dx = touch2.clientX - touch1.clientX;
-        const dy = touch2.clientY - touch1.clientY;
-        const currentDistance = Math.sqrt(dx * dx + dy * dy);
+        const t1 = e.touches[0];
+        const t2 = e.touches[1];
+        const currentDistance = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
+        const midX = (t1.clientX + t2.clientX) / 2;
+        const midY = (t1.clientY + t2.clientY) / 2;
 
+        // Pinch zoom
         if (previousTouchDistance > 0) {
-          const zoomSpeed = 0.5;
-          const distanceDelta = currentDistance - previousTouchDistance;
-          const currentRadius = camera.position.length();
-          const newRadius = currentRadius - distanceDelta * zoomSpeed;
-          const minRadius = 50;
-          const maxRadius = 500;
+          applyZoom(currentDistance - previousTouchDistance, 0.5);
+        }
 
-          if (newRadius >= minRadius && newRadius <= maxRadius) {
-            const direction = camera.position.clone().normalize();
-            camera.position.copy(direction.multiplyScalar(newRadius));
-            needsRenderRef.current = true;
-          }
+        // 2-finger pan: shift the orbit target in camera space
+        const midDeltaX = midX - previousTouchMidpoint.x;
+        const midDeltaY = midY - previousTouchMidpoint.y;
+        if (Math.abs(midDeltaX) > 0.3 || Math.abs(midDeltaY) > 0.3) {
+          const panSpeed = 0.3;
+          const target = orbitTargetRef.current;
+          const camDir = camera.getWorldDirection(new THREE.Vector3());
+          const right = new THREE.Vector3().crossVectors(camDir, new THREE.Vector3(0, 1, 0)).normalize();
+          target.addScaledVector(right, -midDeltaX * panSpeed);
+          target.y += midDeltaY * panSpeed;
+          camera.lookAt(target);
+          needsRenderRef.current = true;
         }
 
         previousTouchDistance = currentDistance;
+        previousTouchMidpoint = { x: midX, y: midY };
       }
     }, { passive: false });
 
     canvas.addEventListener('touchend', (e) => {
-      // If the press never moved past the click threshold, treat it as a tap.
-      // changedTouches has the just-lifted finger position.
-      if (!movedDuringPress && e.changedTouches.length === 1 && pickAtScreen) {
+      if (!movedDuringPress && e.touches.length === 0 && e.changedTouches.length === 1 && pickAtScreen) {
         const t = e.changedTouches[0];
         pickAtScreen(t.clientX, t.clientY);
       }
-      isDragging = false;
-      previousTouchDistance = 0;
-      movedDuringPress = false;
+      if (e.touches.length < 2) {
+        previousTouchDistance = 0;
+        previousTouchMidpoint = { x: 0, y: 0 };
+      }
+      if (e.touches.length === 0) {
+        isDragging = false;
+        movedDuringPress = false;
+      } else if (e.touches.length === 1) {
+        // Transitioned from 2-finger to 1-finger — re-anchor position tracker
+        previousMousePosition = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+        isDragging = true;
+      }
     });
   };
 
@@ -309,44 +347,40 @@ export function ColorVisualization() {
   };
 
   const addAxes = (scene) => {
-    const axesLength = 150;
+    const axesLength = 100;
     const labelOffset = 14;
 
-    // X axis (a*) - Red
-    const xGeometry = new THREE.BufferGeometry();
-    xGeometry.setAttribute('position', new THREE.BufferAttribute(
-      new Float32Array([0, 0, 0, axesLength, 0, 0]),
-      3
-    ));
-    const xLine = new THREE.Line(xGeometry, new THREE.LineBasicMaterial({ color: 0xff0000 }));
-    scene.add(xLine);
-    const xLabel = makeAxisLabel('a*', '#ff6b6b');
-    xLabel.position.set(axesLength + labelOffset, 0, 0);
-    scene.add(xLabel);
+    const addLine = (x1, y1, z1, x2, y2, z2, color) => {
+      const geom = new THREE.BufferGeometry();
+      geom.setAttribute('position', new THREE.BufferAttribute(new Float32Array([x1, y1, z1, x2, y2, z2]), 3));
+      scene.add(new THREE.Line(geom, new THREE.LineBasicMaterial({ color })));
+    };
 
-    // Y axis (L*) - Green
-    const yGeometry = new THREE.BufferGeometry();
-    yGeometry.setAttribute('position', new THREE.BufferAttribute(
-      new Float32Array([0, 0, 0, 0, axesLength, 0]),
-      3
-    ));
-    const yLine = new THREE.Line(yGeometry, new THREE.LineBasicMaterial({ color: 0x00ff00 }));
-    scene.add(yLine);
-    const yLabel = makeAxisLabel('L*', '#6bff6b');
-    yLabel.position.set(0, axesLength + labelOffset, 0);
-    scene.add(yLabel);
+    // a* axis (X): green on negative side, red on positive side
+    addLine(0, 0, 0, -axesLength, 0, 0, 0x22cc55);
+    addLine(0, 0, 0,  axesLength, 0, 0, 0xff3333);
+    const aNegLabel = makeAxisLabel('-a*', '#55dd88');
+    aNegLabel.position.set(-axesLength - labelOffset, 0, 0);
+    scene.add(aNegLabel);
+    const aPosLabel = makeAxisLabel('+a*', '#ff6b6b');
+    aPosLabel.position.set(axesLength + labelOffset, 0, 0);
+    scene.add(aPosLabel);
 
-    // Z axis (b*) - Blue
-    const zGeometry = new THREE.BufferGeometry();
-    zGeometry.setAttribute('position', new THREE.BufferAttribute(
-      new Float32Array([0, 0, 0, 0, 0, axesLength]),
-      3
-    ));
-    const zLine = new THREE.Line(zGeometry, new THREE.LineBasicMaterial({ color: 0x0000ff }));
-    scene.add(zLine);
-    const zLabel = makeAxisLabel('b*', '#6b9eff');
-    zLabel.position.set(0, 0, axesLength + labelOffset);
-    scene.add(zLabel);
+    // L* axis (Y): white, 0 → 100 (L* range)
+    addLine(0, 0, 0, 0, axesLength, 0, 0xffffff);
+    const lLabel = makeAxisLabel('L*', '#ffffff');
+    lLabel.position.set(0, axesLength + labelOffset, 0);
+    scene.add(lLabel);
+
+    // b* axis (Z): blue on negative side, yellow on positive side
+    addLine(0, 0, 0, 0, 0, -axesLength, 0x3366ff);
+    addLine(0, 0, 0, 0, 0,  axesLength, 0xeeaa00);
+    const bNegLabel = makeAxisLabel('-b*', '#6699ff');
+    bNegLabel.position.set(0, 0, -axesLength - labelOffset);
+    scene.add(bNegLabel);
+    const bPosLabel = makeAxisLabel('+b*', '#ffcc44');
+    bPosLabel.position.set(0, 0, axesLength + labelOffset);
+    scene.add(bPosLabel);
   };
 
   const deltaE2000 = (L1, a1, b1, L2, a2, b2) => {
@@ -621,7 +655,8 @@ export function ColorVisualization() {
   // Derived filtered list: name/hex search + similarity threshold (memoized so
   // we don't re-walk 30k colors on unrelated re-renders).
   const filteredColors = useMemo(() => {
-    const normalizedSearch = searchTerm.trim().toLowerCase();
+    const normalizeForSearch = (s) => s.replace(/[‘’]/g, "'").toLowerCase();
+    const normalizedSearch = normalizeForSearch(searchTerm.trim());
     const searchHex = normalizedSearch.replace(/^#/, '');
     const thresholdValue = parseFloat(similarityThreshold);
     const hasThreshold = !Number.isNaN(thresholdValue);
@@ -636,7 +671,7 @@ export function ColorVisualization() {
     } else {
       result = sortedColors.filter(color => {
         if (hasSearch) {
-          const nameMatch = color.name.toLowerCase().includes(normalizedSearch);
+          const nameMatch = normalizeForSearch(color.name).includes(normalizedSearch);
           const hexMatch = color.hex.toLowerCase().replace(/^#/, '').includes(searchHex);
           if (!nameMatch && !hexMatch) return false;
         }
@@ -669,7 +704,7 @@ export function ColorVisualization() {
       needsRenderRef.current = true;
     }
     if (highlightMaterialRef.current) {
-      highlightMaterialRef.current.size = pointSize * 2.2;
+      highlightMaterialRef.current.size = pointSize * 1.8;
       needsRenderRef.current = true;
     }
     if (raycasterRef.current) {
@@ -725,6 +760,76 @@ export function ColorVisualization() {
     particles.userData.visibleColors = source;
     needsRenderRef.current = true;
   }, [hideOutliers, similarityThreshold, selectedColor, sortedColors]);
+
+  // Render a white-glow halo cloud over points that meet the similarity threshold.
+  useEffect(() => {
+    const scene = sceneRef.current;
+    if (!scene) return;
+
+    if (highlightCloudRef.current) {
+      scene.remove(highlightCloudRef.current);
+      highlightCloudRef.current.geometry.dispose();
+      highlightCloudRef.current = null;
+    }
+    if (highlightMaterialRef.current) {
+      highlightMaterialRef.current.dispose();
+      highlightMaterialRef.current = null;
+    }
+
+    const thresholdValue = parseFloat(similarityThreshold);
+    if (!selectedColor || Number.isNaN(thresholdValue) || thresholdValue <= 0) {
+      needsRenderRef.current = true;
+      return;
+    }
+
+    const matchingColors = sortedColors.filter(
+      c => c.similarity !== undefined && c.similarity >= thresholdValue
+    );
+
+    if (matchingColors.length === 0) {
+      needsRenderRef.current = true;
+      return;
+    }
+
+    const positions = new Float32Array(matchingColors.length * 3);
+    matchingColors.forEach((c, i) => {
+      positions[i * 3]     = (c.a / 127) * 150;
+      positions[i * 3 + 1] = c.l;
+      positions[i * 3 + 2] = (c.b / 127) * 150;
+    });
+
+    const geom = new THREE.BufferGeometry();
+    geom.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+
+    const mat = new THREE.PointsMaterial({
+      size: (pointsMaterialRef.current?.size ?? 1.5) * 1.8,
+      color: 0xffffff,
+      sizeAttenuation: true,
+      transparent: true,
+      opacity: 0.18,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+
+    highlightMaterialRef.current = mat;
+    const cloud = new THREE.Points(geom, mat);
+    highlightCloudRef.current = cloud;
+    scene.add(cloud);
+    needsRenderRef.current = true;
+
+    return () => {
+      if (highlightCloudRef.current && sceneRef.current) {
+        sceneRef.current.remove(highlightCloudRef.current);
+        highlightCloudRef.current.geometry.dispose();
+        highlightCloudRef.current = null;
+      }
+      if (highlightMaterialRef.current) {
+        highlightMaterialRef.current.dispose();
+        highlightMaterialRef.current = null;
+      }
+      needsRenderRef.current = true;
+    };
+  }, [sortedColors, similarityThreshold, selectedColor]);
 
   const visibleColors = useMemo(
     () => filteredColors.slice(0, displayLimit),
@@ -791,9 +896,7 @@ export function ColorVisualization() {
                         <div className="reference-name">{selectedColor.name}</div>
                         <div className="reference-hex">{selectedColor.hex.toUpperCase()}</div>
                         <div className="reference-lab">
-                          L: {selectedColor.l.toFixed(1)},
-                          a: {selectedColor.a.toFixed(1)},
-                          b: {selectedColor.b.toFixed(1)}
+                          <LabDisplay l={selectedColor.l} a={selectedColor.a} b={selectedColor.b} />
                         </div>
                       </div>
                       <button
@@ -821,13 +924,26 @@ export function ColorVisualization() {
                 )}
 
                 <div className="filter-controls">
-                  <input
-                    type="text"
-                    className="filter-input"
-                    placeholder="Search by name or hex (e.g. crimson or #ff0033)"
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                  />
+                  <div className="search-wrapper">
+                    <input
+                      type="text"
+                      className="filter-input"
+                      placeholder="Search by name or hex (e.g. crimson or #ff0033)"
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                    />
+                    {searchTerm && (
+                      <button
+                        type="button"
+                        className="search-clear"
+                        onClick={() => setSearchTerm('')}
+                        aria-label="Clear search"
+                        title="Clear search"
+                      >
+                        ×
+                      </button>
+                    )}
+                  </div>
                   <div className="threshold-section">
                     <div className="threshold-header">
                       <label className="threshold-label" htmlFor="similarity-threshold-number">
@@ -936,6 +1052,7 @@ export function ColorVisualization() {
                             <div className="color-info">
                               <div className="color-name">{color.name}</div>
                               <div className="color-hex">{color.hex.toUpperCase()}</div>
+                              <div className="color-lab"><LabDisplay l={color.l} a={color.a} b={color.b} /></div>
                             </div>
                             {selectedColor && color.similarity !== undefined && (
                               <div className="color-similarity">
@@ -1037,9 +1154,7 @@ export function ColorVisualization() {
                 <div className="inspected-name">{inspectedColor.name}</div>
                 <div className="inspected-hex">{inspectedColor.hex.toUpperCase()}</div>
                 <div className="inspected-lab">
-                  L: {inspectedColor.l.toFixed(1)},
-                  a: {inspectedColor.a.toFixed(1)},
-                  b: {inspectedColor.b.toFixed(1)}
+                  <LabDisplay l={inspectedColor.l} a={inspectedColor.a} b={inspectedColor.b} />
                 </div>
                 {inspectedSimilarity !== null && (
                   <div className="inspected-similarity">

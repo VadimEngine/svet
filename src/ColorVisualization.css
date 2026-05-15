@@ -154,8 +154,8 @@
 }
 
 .reference-lab {
-  color: #aaa;
-  font-size: 0.75rem;
+  font-size: 0.78rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
 .reference-clear {
@@ -195,6 +195,37 @@
   flex-direction: column;
   gap: 0.5rem;
   margin-bottom: 0.75rem;
+}
+
+.search-wrapper {
+  position: relative;
+}
+
+.search-wrapper .filter-input {
+  padding-right: 2rem;
+}
+
+.search-clear {
+  position: absolute;
+  right: 0.45rem;
+  top: 50%;
+  transform: translateY(-50%);
+  background: transparent;
+  border: none;
+  color: #777;
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+  width: 18px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.search-clear:hover {
+  color: #fff;
 }
 
 .filter-input {
@@ -418,7 +449,6 @@
   border-radius: 4px;
   cursor: pointer;
   transition: background 0.15s, border-color 0.15s;
-  min-height: 44px;
   box-sizing: border-box;
   contain: content;
 }
@@ -463,6 +493,11 @@
   color: #888;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 0.7rem;
+}
+
+.color-lab {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.63rem;
 }
 
 .color-similarity {
@@ -626,8 +661,8 @@
 }
 
 .inspected-lab {
-  color: #aaa;
-  font-size: 0.7rem;
+  font-size: 0.73rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   margin-top: 0.1rem;
 }
 
