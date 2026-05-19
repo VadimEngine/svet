@@ -6,6 +6,21 @@ const INITIAL_DISPLAY_LIMIT = 100;
 const DISPLAY_INCREMENT = 100;
 const SCROLL_LOAD_THRESHOLD_PX = 250;
 
+const hexToLab = (hex) => {
+  if (!/^[0-9a-f]{6}$/i.test(hex)) return null;
+  const r = parseInt(hex.substring(0, 2), 16) / 255;
+  const g = parseInt(hex.substring(2, 4), 16) / 255;
+  const b = parseInt(hex.substring(4, 6), 16) / 255;
+  const toLinear = (c) => c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+  const rl = toLinear(r), gl = toLinear(g), bl = toLinear(b);
+  const X = rl * 0.4124564 + gl * 0.3575761 + bl * 0.1804375;
+  const Y = rl * 0.2126729 + gl * 0.7151522 + bl * 0.0721750;
+  const Z = rl * 0.0193339 + gl * 0.1191920 + bl * 0.9503041;
+  const f = (t) => t > 0.008856 ? Math.cbrt(t) : 7.787 * t + 16 / 116;
+  const fx = f(X / 0.95047), fy = f(Y / 1.00000), fz = f(Z / 1.08883);
+  return { l: 116 * fy - 16, a: 500 * (fx - fy), b: 200 * (fy - fz) };
+};
+
 function LabDisplay({ l, a, b }) {
   const outline = '0 0 4px #000, 0 0 8px rgba(0,0,0,0.6)';
 
@@ -655,15 +670,29 @@ export function ColorVisualization() {
   // Derived filtered list: name/hex search + similarity threshold (memoized so
   // we don't re-walk 30k colors on unrelated re-renders).
   const filteredColors = useMemo(() => {
-    const normalizeForSearch = (s) => s.replace(/[‘’]/g, "'").toLowerCase();
+    const normalizeForSearch = (s) => s.replace(/[‘’]/g, "’").toLowerCase();
     const normalizedSearch = normalizeForSearch(searchTerm.trim());
-    const searchHex = normalizedSearch.replace(/^#/, '');
+    const searchHex = normalizedSearch.replace(/^#/, "");
     const thresholdValue = parseFloat(similarityThreshold);
     const hasThreshold = !Number.isNaN(thresholdValue);
     const hasSearch = normalizedSearch.length > 0;
     const hasSelection = !!selectedColor;
 
     const applyThreshold = filterByThreshold && hasSelection && hasThreshold;
+
+    // When the user types a full 6-digit hex, rank ALL colors by similarity to
+    // that hex — even if it doesn’t exist in the dataset.
+    const isFullHex = /^#?[0-9a-f]{6}$/i.test(normalizedSearch);
+    if (isFullHex) {
+      const lab = hexToLab(searchHex);
+      if (lab) {
+        const ranked = sortedColors.map(c => {
+          const distance = deltaE2000(lab.l, lab.a, lab.b, c.l, c.a, c.b);
+          return { ...c, distance, similarity: Math.max(0, 100 - distance) };
+        }).sort((a, b) => a.distance - b.distance);
+        return reverseSort ? ranked.slice().reverse() : ranked;
+      }
+    }
 
     let result;
     if (!hasSearch && !applyThreshold) {
@@ -672,7 +701,7 @@ export function ColorVisualization() {
       result = sortedColors.filter(color => {
         if (hasSearch) {
           const nameMatch = normalizeForSearch(color.name).includes(normalizedSearch);
-          const hexMatch = color.hex.toLowerCase().replace(/^#/, '').includes(searchHex);
+          const hexMatch = color.hex.toLowerCase().replace(/^#/, "").includes(searchHex);
           if (!nameMatch && !hexMatch) return false;
         }
         if (applyThreshold) {
@@ -830,6 +859,8 @@ export function ColorVisualization() {
       needsRenderRef.current = true;
     };
   }, [sortedColors, similarityThreshold, selectedColor]);
+
+  const isHexSearch = /^#?[0-9a-f]{6}$/i.test(searchTerm.trim());
 
   const visibleColors = useMemo(
     () => filteredColors.slice(0, displayLimit),
@@ -1054,7 +1085,7 @@ export function ColorVisualization() {
                               <div className="color-hex">{color.hex.toUpperCase()}</div>
                               <div className="color-lab"><LabDisplay l={color.l} a={color.a} b={color.b} /></div>
                             </div>
-                            {selectedColor && color.similarity !== undefined && (
+                            {(selectedColor || isHexSearch) && color.similarity !== undefined && (
                               <div className="color-similarity">
                                 {color.similarity.toFixed(2)}%
                               </div>
