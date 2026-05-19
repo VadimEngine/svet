@@ -806,7 +806,7 @@ export function ColorVisualization() {
     }
 
     const thresholdValue = parseFloat(similarityThreshold);
-    if (!selectedColor || Number.isNaN(thresholdValue) || thresholdValue <= 0) {
+    if (!selectedColor || Number.isNaN(thresholdValue) || thresholdValue <= 0 || hideOutliers) {
       needsRenderRef.current = true;
       return;
     }
@@ -858,7 +858,7 @@ export function ColorVisualization() {
       }
       needsRenderRef.current = true;
     };
-  }, [sortedColors, similarityThreshold, selectedColor]);
+  }, [sortedColors, similarityThreshold, selectedColor, hideOutliers]);
 
   const isHexSearch = /^#?[0-9a-f]{6}$/i.test(searchTerm.trim());
 
