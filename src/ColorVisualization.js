@@ -686,10 +686,13 @@ export function ColorVisualization() {
     if (isFullHex) {
       const lab = hexToLab(searchHex);
       if (lab) {
-        const ranked = sortedColors.map(c => {
+        let ranked = sortedColors.map(c => {
           const distance = deltaE2000(lab.l, lab.a, lab.b, c.l, c.a, c.b);
           return { ...c, distance, similarity: Math.max(0, 100 - distance) };
         }).sort((a, b) => a.distance - b.distance);
+        if (filterByThreshold && hasThreshold) {
+          ranked = ranked.filter(c => c.similarity >= thresholdValue);
+        }
         return reverseSort ? ranked.slice().reverse() : ranked;
       }
     }
@@ -989,7 +992,7 @@ export function ColorVisualization() {
                         max="100"
                         step="0.01"
                         onChange={(e) => setSimilarityThreshold(e.target.value)}
-                        disabled={!selectedColor}
+                        disabled={!selectedColor && !isHexSearch}
                       />
                     </div>
                     <input
@@ -1000,21 +1003,21 @@ export function ColorVisualization() {
                       step="0.01"
                       value={parseFloat(similarityThreshold) || 0}
                       onChange={(e) => setSimilarityThreshold(e.target.value)}
-                      disabled={!selectedColor}
+                      disabled={!selectedColor && !isHexSearch}
                       aria-label="Min similarity percentage"
                     />
                   </div>
 
                   <div className="filter-options">
                     <label
-                      className={`option-check ${!selectedColor ? 'disabled' : ''}`}
+                      className={`option-check ${!selectedColor && !isHexSearch ? 'disabled' : ''}`}
                       title="Apply the similarity threshold to the list of colors below"
                     >
                       <input
                         type="checkbox"
                         checked={filterByThreshold}
                         onChange={(e) => setFilterByThreshold(e.target.checked)}
-                        disabled={!selectedColor}
+                        disabled={!selectedColor && !isHexSearch}
                       />
                       <span>Filter colors</span>
                     </label>
