@@ -365,35 +365,70 @@ export function ColorVisualization() {
     const axesLength = 100;
     const labelOffset = 14;
 
-    const addLine = (x1, y1, z1, x2, y2, z2, color) => {
-      const geom = new THREE.BufferGeometry();
-      geom.setAttribute('position', new THREE.BufferAttribute(new Float32Array([x1, y1, z1, x2, y2, z2]), 3));
-      scene.add(new THREE.Line(geom, new THREE.LineBasicMaterial({ color })));
+    // Convert LAB to sRGB [0..1] clamped
+    const labToRgb = (L, a, b) => {
+      const fy = (L + 16) / 116;
+      const fx = a / 500 + fy;
+      const fz = fy - b / 200;
+      const d = 6 / 29;
+      const f = t => t > d ? t * t * t : 3 * d * d * (t - 4 / 29);
+      const X = 0.95047 * f(fx);
+      const Y = 1.00000 * f(fy);
+      const Z = 1.08883 * f(fz);
+      const gamma = c => c <= 0.0031308 ? 12.92 * c : 1.055 * Math.pow(c, 1 / 2.4) - 0.055;
+      return [
+        Math.max(0, Math.min(1, gamma( 3.2406 * X - 1.5372 * Y - 0.4986 * Z))),
+        Math.max(0, Math.min(1, gamma(-0.9689 * X + 1.8758 * Y + 0.0415 * Z))),
+        Math.max(0, Math.min(1, gamma( 0.0557 * X - 0.2040 * Y + 1.0570 * Z))),
+      ];
     };
 
-    // a* axis (X): green on negative side, red on positive side
-    addLine(0, 0, 0, -axesLength, 0, 0, 0x22cc55);
-    addLine(0, 0, 0,  axesLength, 0, 0, 0xff3333);
-    const aNegLabel = makeAxisLabel('-a*', '#55dd88');
-    aNegLabel.position.set(-axesLength - labelOffset, 0, 0);
-    scene.add(aNegLabel);
-    const aPosLabel = makeAxisLabel('+a*', '#ff6b6b');
-    aPosLabel.position.set(axesLength + labelOffset, 0, 0);
-    scene.add(aPosLabel);
+    const toHex = ([r, g, b]) =>
+      '#' + [r, g, b].map(c => Math.round(c * 255).toString(16).padStart(2, '0')).join('');
 
-    // L* axis (Y): white, 0 → 100 (L* range)
-    addLine(0, 0, 0, 0, axesLength, 0, 0xffffff);
-    const lLabel = makeAxisLabel('L*', '#ffffff');
+    const addGradientLine = (from, to, colorFn, steps = 64) => {
+      const n = steps + 1;
+      const positions = new Float32Array(n * 3);
+      const colors = new Float32Array(n * 3);
+      for (let i = 0; i < n; i++) {
+        const t = i / steps;
+        positions[i * 3]     = from[0] + (to[0] - from[0]) * t;
+        positions[i * 3 + 1] = from[1] + (to[1] - from[1]) * t;
+        positions[i * 3 + 2] = from[2] + (to[2] - from[2]) * t;
+        const [r, g, bv] = colorFn(t);
+        colors[i * 3] = r; colors[i * 3 + 1] = g; colors[i * 3 + 2] = bv;
+      }
+      const geom = new THREE.BufferGeometry();
+      geom.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+      geom.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+      scene.add(new THREE.Line(geom, new THREE.LineBasicMaterial({ vertexColors: true })));
+    };
+
+    // L* axis (Y): black (L=0) → white (L=100), a=0, b=0
+    addGradientLine([0, 0, 0], [0, axesLength, 0], t => labToRgb(t * 100, 0, 0));
+    const lLabel = makeAxisLabel('L*', toHex(labToRgb(100, 0, 0)));
     lLabel.position.set(0, axesLength + labelOffset, 0);
     scene.add(lLabel);
 
-    // b* axis (Z): blue on negative side, yellow on positive side
-    addLine(0, 0, 0, 0, 0, -axesLength, 0x3366ff);
-    addLine(0, 0, 0, 0, 0,  axesLength, 0xeeaa00);
-    const bNegLabel = makeAxisLabel('-b*', '#6699ff');
+    // a* axis (X): L=50, a varies 0 → ±128
+    addGradientLine([0, 0, 0], [-axesLength, 0, 0], t => labToRgb(50, -t * 128, 0));
+    const aNegLabel = makeAxisLabel('-a*', toHex(labToRgb(50, -128, 0)));
+    aNegLabel.position.set(-axesLength - labelOffset, 0, 0);
+    scene.add(aNegLabel);
+
+    addGradientLine([0, 0, 0], [axesLength, 0, 0], t => labToRgb(50, t * 128, 0));
+    const aPosLabel = makeAxisLabel('+a*', toHex(labToRgb(50, 128, 0)));
+    aPosLabel.position.set(axesLength + labelOffset, 0, 0);
+    scene.add(aPosLabel);
+
+    // b* axis (Z): L=50, b varies 0 → ±128
+    addGradientLine([0, 0, 0], [0, 0, -axesLength], t => labToRgb(50, 0, -t * 128));
+    const bNegLabel = makeAxisLabel('-b*', toHex(labToRgb(50, 0, -128)));
     bNegLabel.position.set(0, 0, -axesLength - labelOffset);
     scene.add(bNegLabel);
-    const bPosLabel = makeAxisLabel('+b*', '#ffcc44');
+
+    addGradientLine([0, 0, 0], [0, 0, axesLength], t => labToRgb(50, 0, t * 128));
+    const bPosLabel = makeAxisLabel('+b*', toHex(labToRgb(50, 0, 128)));
     bPosLabel.position.set(0, 0, axesLength + labelOffset);
     scene.add(bPosLabel);
   };
