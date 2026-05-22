@@ -77,6 +77,7 @@ export function ColorVisualization() {
   const [pointSize, setPointSize] = useState(1.5);
   const [panelCollapsed, setPanelCollapsed] = useState(false);
   const [filterByThreshold, setFilterByThreshold] = useState(true);
+  const [hidePercentage, setHidePercentage] = useState(false);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -1123,7 +1124,7 @@ export function ColorVisualization() {
                               <div className="color-hex">{color.hex.toUpperCase()}</div>
                               <div className="color-lab"><LabDisplay l={color.l} a={color.a} b={color.b} /></div>
                             </div>
-                            {(selectedColor || isHexSearch) && color.similarity !== undefined && (
+                            {!hidePercentage && (selectedColor || isHexSearch) && color.similarity !== undefined && (
                               <div className="color-similarity">
                                 {color.similarity.toFixed(2)}%
                               </div>
@@ -1168,6 +1169,19 @@ export function ColorVisualization() {
                   />
                   <div className="setting-hint">
                     Adjust how large the points appear in the 3D plot.
+                  </div>
+                </div>
+                <div className="setting-row">
+                  <label className="option-check">
+                    <input
+                      type="checkbox"
+                      checked={hidePercentage}
+                      onChange={(e) => setHidePercentage(e.target.checked)}
+                    />
+                    <span>Hide percentage</span>
+                  </label>
+                  <div className="setting-hint">
+                    Hide the similarity percentage in the color list and inspected color panel.
                   </div>
                 </div>
               </div>
@@ -1225,7 +1239,7 @@ export function ColorVisualization() {
                 <div className="inspected-lab">
                   <LabDisplay l={inspectedColor.l} a={inspectedColor.a} b={inspectedColor.b} />
                 </div>
-                {inspectedSimilarity !== null && (
+                {!hidePercentage && inspectedSimilarity !== null && (
                   <div className="inspected-similarity">
                     {inspectedSimilarity.toFixed(2)}% vs reference
                   </div>
