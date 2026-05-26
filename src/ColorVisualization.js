@@ -1348,7 +1348,7 @@ export function ColorVisualization() {
                 ) : (
                   <div className="color-list">
                     {listColors.map((color, idx) => (
-                      <div key={`${color.hex}-${idx}`} className="color-item">
+                      <div key={`${color.hex}-${idx}`} className={`color-item${inspectedColor?.hex === color.hex ? ' selected' : ''}`} onClick={() => setInspectedColor(color)}>
                         <div
                           className="color-swatch"
                           style={{ backgroundColor: color.hex }}
