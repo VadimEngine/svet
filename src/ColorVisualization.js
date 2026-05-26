@@ -21,6 +21,31 @@ const hexToLab = (hex) => {
   return { l: 116 * fy - 16, a: 500 * (fx - fy), b: 200 * (fy - fz) };
 };
 
+const hexToXyz = (hex) => {
+  if (!/^[0-9a-f]{6}$/i.test(hex)) return { x: 0, y: 0, z: 0 };
+  const r = parseInt(hex.substring(0, 2), 16) / 255;
+  const g = parseInt(hex.substring(2, 4), 16) / 255;
+  const b = parseInt(hex.substring(4, 6), 16) / 255;
+  const toLinear = (c) => c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+  const rl = toLinear(r), gl = toLinear(g), bl = toLinear(b);
+  return {
+    x: rl * 0.4124564 + gl * 0.3575761 + bl * 0.1804375,
+    y: rl * 0.2126729 + gl * 0.7151522 + bl * 0.0721750,
+    z: rl * 0.0193339 + gl * 0.1191920 + bl * 0.9503041,
+  };
+};
+
+// Returns 3D plot position for a color given the current plot mode.
+// LAB: a* → X, L* → Y, b* → Z  (bipolar axes, range ~±150 / 0-100)
+// XYZ: X → x, Y → y, Z → z     (all positive, D65 white at ~143/100/163)
+const getColorPlotPos = (color, mode) => {
+  if (mode === 'xyz') {
+    const xyz = hexToXyz(color.hex.replace('#', ''));
+    return { x: xyz.x * 150, y: xyz.y * 100, z: xyz.z * 150 };
+  }
+  return { x: (color.a / 127) * 150, y: color.l, z: (color.b / 127) * 150 };
+};
+
 function LabDisplay({ l, a, b }) {
   const outline = '0 0 4px #000, 0 0 8px rgba(0,0,0,0.6)';
 
@@ -56,8 +81,11 @@ export function ColorVisualization() {
   const particlesRef = useRef(null);
   const pointsMaterialRef = useRef(null);
   const highlightMarkerRef = useRef(null);
+  const inspectMarkerRef = useRef(null);
   const highlightCloudRef = useRef(null);
   const highlightMaterialRef = useRef(null);
+  const axesGroupRef = useRef(null);
+  const selectedColorRef = useRef(null);
   const orbitTargetRef = useRef(null);
   const colorsRef = useRef([]);
   const needsRenderRef = useRef(true);
@@ -78,6 +106,9 @@ export function ColorVisualization() {
   const [panelCollapsed, setPanelCollapsed] = useState(false);
   const [filterByThreshold, setFilterByThreshold] = useState(true);
   const [hidePercentage, setHidePercentage] = useState(false);
+  const [plotMode, setPlotMode] = useState('lab');
+  const [listColors, setListColors] = useState([]);
+  const [plotListOnly, setPlotListOnly] = useState(false);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -134,7 +165,8 @@ export function ColorVisualization() {
 
     // Setup controls
     setupControls(camera, renderer, pickAtScreen);
-    addAxes(scene);
+    axesGroupRef.current = buildLabAxesGroup();
+    scene.add(axesGroupRef.current);
 
     // Handle window resize
     const handleResize = () => {
@@ -362,11 +394,11 @@ export function ColorVisualization() {
     return sprite;
   };
 
-  const addAxes = (scene) => {
+  const buildLabAxesGroup = () => {
+    const group = new THREE.Group();
     const axesLength = 100;
     const labelOffset = 14;
 
-    // Convert LAB to sRGB [0..1] clamped
     const labToRgb = (L, a, b) => {
       const fy = (L + 16) / 116;
       const fx = a / 500 + fy;
@@ -402,36 +434,95 @@ export function ColorVisualization() {
       const geom = new THREE.BufferGeometry();
       geom.setAttribute('position', new THREE.BufferAttribute(positions, 3));
       geom.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-      scene.add(new THREE.Line(geom, new THREE.LineBasicMaterial({ vertexColors: true })));
+      group.add(new THREE.Line(geom, new THREE.LineBasicMaterial({ vertexColors: true })));
     };
 
-    // L* axis (Y): black (L=0) → white (L=100), a=0, b=0
     addGradientLine([0, 0, 0], [0, axesLength, 0], t => labToRgb(t * 100, 0, 0));
     const lLabel = makeAxisLabel('L*', toHex(labToRgb(100, 0, 0)));
     lLabel.position.set(0, axesLength + labelOffset, 0);
-    scene.add(lLabel);
+    group.add(lLabel);
 
-    // a* axis (X): L=50, a varies 0 → ±128
     addGradientLine([0, 0, 0], [-axesLength, 0, 0], t => labToRgb(50, -t * 128, 0));
     const aNegLabel = makeAxisLabel('-a*', toHex(labToRgb(50, -128, 0)));
     aNegLabel.position.set(-axesLength - labelOffset, 0, 0);
-    scene.add(aNegLabel);
+    group.add(aNegLabel);
 
     addGradientLine([0, 0, 0], [axesLength, 0, 0], t => labToRgb(50, t * 128, 0));
     const aPosLabel = makeAxisLabel('+a*', toHex(labToRgb(50, 128, 0)));
     aPosLabel.position.set(axesLength + labelOffset, 0, 0);
-    scene.add(aPosLabel);
+    group.add(aPosLabel);
 
-    // b* axis (Z): L=50, b varies 0 → ±128
     addGradientLine([0, 0, 0], [0, 0, -axesLength], t => labToRgb(50, 0, -t * 128));
     const bNegLabel = makeAxisLabel('-b*', toHex(labToRgb(50, 0, -128)));
     bNegLabel.position.set(0, 0, -axesLength - labelOffset);
-    scene.add(bNegLabel);
+    group.add(bNegLabel);
 
     addGradientLine([0, 0, 0], [0, 0, axesLength], t => labToRgb(50, 0, t * 128));
     const bPosLabel = makeAxisLabel('+b*', toHex(labToRgb(50, 0, 128)));
     bPosLabel.position.set(0, 0, axesLength + labelOffset);
-    scene.add(bPosLabel);
+    group.add(bPosLabel);
+
+    return group;
+  };
+
+  const buildXyzAxesGroup = () => {
+    const group = new THREE.Group();
+    const labelOffset = 14;
+
+    // D65 white point extents scaled to plot space
+    const xEnd = 0.95047 * 150; // ≈ 142.6
+    const yEnd = 1.0    * 100;  // = 100
+    const zEnd = 1.08883 * 150; // ≈ 163.3
+
+    const xyzToRgb = (X, Y, Z) => {
+      const gamma = c => c <= 0.0031308 ? 12.92 * c : 1.055 * Math.pow(c, 1 / 2.4) - 0.055;
+      return [
+        Math.max(0, Math.min(1, gamma( 3.2406 * X - 1.5372 * Y - 0.4986 * Z))),
+        Math.max(0, Math.min(1, gamma(-0.9689 * X + 1.8758 * Y + 0.0415 * Z))),
+        Math.max(0, Math.min(1, gamma( 0.0557 * X - 0.2040 * Y + 1.0570 * Z))),
+      ];
+    };
+
+    const toHex = ([r, g, b]) =>
+      '#' + [r, g, b].map(c => Math.round(c * 255).toString(16).padStart(2, '0')).join('');
+
+    const addGradientLine = (from, to, colorFn, steps = 64) => {
+      const n = steps + 1;
+      const positions = new Float32Array(n * 3);
+      const colors = new Float32Array(n * 3);
+      for (let i = 0; i < n; i++) {
+        const t = i / steps;
+        positions[i * 3]     = from[0] + (to[0] - from[0]) * t;
+        positions[i * 3 + 1] = from[1] + (to[1] - from[1]) * t;
+        positions[i * 3 + 2] = from[2] + (to[2] - from[2]) * t;
+        const [r, g, bv] = colorFn(t);
+        colors[i * 3] = r; colors[i * 3 + 1] = g; colors[i * 3 + 2] = bv;
+      }
+      const geom = new THREE.BufferGeometry();
+      geom.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+      geom.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+      group.add(new THREE.Line(geom, new THREE.LineBasicMaterial({ vertexColors: true, depthTest: false })));
+    };
+
+    // X axis: X varies 0 → 0.95047, Y=0, Z=0
+    addGradientLine([0, 0, 0], [xEnd, 0, 0], t => xyzToRgb(t * 0.95047, 0, 0));
+    const xLabel = makeAxisLabel('X', toHex(xyzToRgb(0.95047, 0, 0)));
+    xLabel.position.set(xEnd + labelOffset, 0, 0);
+    group.add(xLabel);
+
+    // Y axis: luminance gradient (black → white); pure xyzToRgb(0,t,0) is green and invisible in the data cloud
+    addGradientLine([0, 0, 0], [0, yEnd, 0], t => [t, t, t]);
+    const yLabel = makeAxisLabel('Y', '#ffffff');
+    yLabel.position.set(0, yEnd + labelOffset, 0);
+    group.add(yLabel);
+
+    // Z axis: Z varies 0 → 1.08883, X=0, Y=0
+    addGradientLine([0, 0, 0], [0, 0, zEnd], t => xyzToRgb(0, 0, t * 1.08883));
+    const zLabel = makeAxisLabel('Z', toHex(xyzToRgb(0, 0, 1.08883)));
+    zLabel.position.set(0, 0, zEnd + labelOffset);
+    group.add(zLabel);
+
+    return group;
   };
 
   const deltaE2000 = (L1, a1, b1, L2, a2, b2) => {
@@ -542,7 +633,7 @@ export function ColorVisualization() {
 
     // Create a sphere marker
     const geometry = new THREE.SphereGeometry(3, 32, 32);
-    const material = new THREE.MeshBasicMaterial({ color: 0xffff00 });
+    const material = new THREE.MeshBasicMaterial({ color: 0xffff00, wireframe: true, transparent: true, opacity: 0.7 });
     const marker = new THREE.Mesh(geometry, material);
     marker.position.set(x, y, z);
     scene.add(marker);
@@ -552,12 +643,10 @@ export function ColorVisualization() {
 
   const handleColorSelect = (color) => {
     setSelectedColor(color);
-    
-    // Add highlight marker
-    const x = (color.a / 127) * 150;
-    const y = color.l;
-    const z = (color.b / 127) * 150;
-    addHighlightMarker(x, y, z);
+    selectedColorRef.current = color;
+
+    const pos = getColorPlotPos(color, plotMode);
+    addHighlightMarker(pos.x, pos.y, pos.z);
 
     // Sort colors by similarity
     const sorted = colorsRef.current.map(c => {
@@ -656,11 +745,8 @@ export function ColorVisualization() {
     const colors_array = [];
 
     colors.forEach(color => {
-      const x = (color.a / 127) * 150;
-      const y = color.l;
-      const z = (color.b / 127) * 150;
-
-      positions.push(x, y, z);
+      const pos = getColorPlotPos(color, 'lab');
+      positions.push(pos.x, pos.y, pos.z);
 
       // Parse hex color
       const hex = color.hex.replace('#', '');
@@ -702,6 +788,19 @@ export function ColorVisualization() {
       setError('');
     }, 5000);
   };
+
+  const handleAddToList = (color) => {
+    setListColors(prev => prev.some(c => c.hex === color.hex) ? prev : [...prev, color]);
+  };
+
+  const handleRemoveFromList = (color) => {
+    setListColors(prev => prev.filter(c => c.hex !== color.hex));
+  };
+
+  // Turn off plotListOnly automatically if the list is cleared.
+  useEffect(() => {
+    if (listColors.length === 0 && plotListOnly) setPlotListOnly(false);
+  }, [listColors, plotListOnly]);
 
   // Derived filtered list: name/hex search + similarity threshold (memoized so
   // we don't re-walk 30k colors on unrelated re-renders).
@@ -789,18 +888,24 @@ export function ColorVisualization() {
     const particles = particlesRef.current;
     if (!particles) return;
 
-    const thresholdValue = parseFloat(similarityThreshold);
-    const hasThreshold = !Number.isNaN(thresholdValue);
-    const shouldFilter = hideOutliers && !!selectedColor && hasThreshold;
+    let source;
+    let shouldFilter;
 
-    const wasFiltered = particles.userData.filtered === true;
-    if (!shouldFilter && !wasFiltered) {
-      return; // already showing everything — nothing to do
+    if (plotListOnly) {
+      source = listColors;
+      shouldFilter = true;
+    } else {
+      const thresholdValue = parseFloat(similarityThreshold);
+      const hasThreshold = !Number.isNaN(thresholdValue);
+      shouldFilter = hideOutliers && !!selectedColor && hasThreshold;
+
+      const wasFiltered = particles.userData.filtered === true;
+      if (!shouldFilter && !wasFiltered) return;
+
+      source = shouldFilter
+        ? sortedColors.filter(c => c.similarity !== undefined && c.similarity >= thresholdValue)
+        : colorsRef.current;
     }
-
-    const source = shouldFilter
-      ? sortedColors.filter(c => c.similarity !== undefined && c.similarity >= thresholdValue)
-      : colorsRef.current;
 
     const n = source.length;
     const positions = new Float32Array(n * 3);
@@ -808,9 +913,10 @@ export function ColorVisualization() {
 
     for (let i = 0; i < n; i++) {
       const c = source[i];
-      positions[i * 3] = (c.a / 127) * 150;
-      positions[i * 3 + 1] = c.l;
-      positions[i * 3 + 2] = (c.b / 127) * 150;
+      const p = getColorPlotPos(c, plotMode);
+      positions[i * 3] = p.x;
+      positions[i * 3 + 1] = p.y;
+      positions[i * 3 + 2] = p.z;
 
       const hex = c.hex.replace('#', '');
       colorsArr[i * 3] = parseInt(hex.substring(0, 2), 16) / 255;
@@ -827,7 +933,7 @@ export function ColorVisualization() {
     particles.userData.filtered = shouldFilter;
     particles.userData.visibleColors = source;
     needsRenderRef.current = true;
-  }, [hideOutliers, similarityThreshold, selectedColor, sortedColors]);
+  }, [hideOutliers, similarityThreshold, selectedColor, sortedColors, plotMode, plotListOnly, listColors]);
 
   // Render a white-glow halo cloud over points that meet the similarity threshold.
   useEffect(() => {
@@ -845,7 +951,7 @@ export function ColorVisualization() {
     }
 
     const thresholdValue = parseFloat(similarityThreshold);
-    if (!selectedColor || Number.isNaN(thresholdValue) || thresholdValue <= 0 || hideOutliers) {
+    if (!selectedColor || Number.isNaN(thresholdValue) || thresholdValue <= 0 || hideOutliers || plotListOnly) {
       needsRenderRef.current = true;
       return;
     }
@@ -861,9 +967,10 @@ export function ColorVisualization() {
 
     const positions = new Float32Array(matchingColors.length * 3);
     matchingColors.forEach((c, i) => {
-      positions[i * 3]     = (c.a / 127) * 150;
-      positions[i * 3 + 1] = c.l;
-      positions[i * 3 + 2] = (c.b / 127) * 150;
+      const p = getColorPlotPos(c, plotMode);
+      positions[i * 3]     = p.x;
+      positions[i * 3 + 1] = p.y;
+      positions[i * 3 + 2] = p.z;
     });
 
     const geom = new THREE.BufferGeometry();
@@ -897,7 +1004,64 @@ export function ColorVisualization() {
       }
       needsRenderRef.current = true;
     };
-  }, [sortedColors, similarityThreshold, selectedColor, hideOutliers]);
+  }, [sortedColors, similarityThreshold, selectedColor, hideOutliers, plotMode, plotListOnly]);
+
+  // Place a cyan sphere on the plot for the currently inspected color.
+  useEffect(() => {
+    const scene = sceneRef.current;
+    if (!scene) return;
+
+    if (inspectMarkerRef.current) {
+      scene.remove(inspectMarkerRef.current);
+      inspectMarkerRef.current = null;
+    }
+
+    if (inspectedColor) {
+      const { x, y, z } = getColorPlotPos(inspectedColor, plotMode);
+
+      const geometry = new THREE.SphereGeometry(3, 32, 32);
+      const material = new THREE.MeshBasicMaterial({ color: 0x00ffff, wireframe: true, transparent: true, opacity: 0.7 });
+      const marker = new THREE.Mesh(geometry, material);
+      marker.position.set(x, y, z);
+      scene.add(marker);
+      inspectMarkerRef.current = marker;
+    }
+
+    needsRenderRef.current = true;
+  }, [inspectedColor, plotMode]);
+
+  // When the plot mode changes, rebuild particle positions and axes.
+  useEffect(() => {
+    const particles = particlesRef.current;
+    const scene = sceneRef.current;
+    if (!particles || !scene || colorsRef.current.length === 0) return;
+
+    // Reposition all visible points
+    const source = particles.userData.visibleColors || colorsRef.current;
+    const positions = new Float32Array(source.length * 3);
+    source.forEach((c, i) => {
+      const p = getColorPlotPos(c, plotMode);
+      positions[i * 3] = p.x;
+      positions[i * 3 + 1] = p.y;
+      positions[i * 3 + 2] = p.z;
+    });
+    particles.geometry.attributes.position.array.set(positions);
+    particles.geometry.attributes.position.needsUpdate = true;
+
+    // Swap axes group
+    if (axesGroupRef.current) scene.remove(axesGroupRef.current);
+    axesGroupRef.current = plotMode === 'xyz' ? buildXyzAxesGroup() : buildLabAxesGroup();
+    scene.add(axesGroupRef.current);
+
+    // Reposition reference marker if present
+    if (selectedColorRef.current && highlightMarkerRef.current) {
+      const p = getColorPlotPos(selectedColorRef.current, plotMode);
+      highlightMarkerRef.current.position.set(p.x, p.y, p.z);
+    }
+
+    needsRenderRef.current = true;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [plotMode]);
 
   const isHexSearch = /^#?[0-9a-f]{6}$/i.test(searchTerm.trim());
 
@@ -932,6 +1096,13 @@ export function ColorVisualization() {
                   onClick={() => setActiveTab('colors')}
                 >
                   Colors
+                </button>
+                <button
+                  type="button"
+                  className={`panel-tab ${activeTab === 'list' ? 'active' : ''}`}
+                  onClick={() => setActiveTab('list')}
+                >
+                  List Plot{listColors.length > 0 && <span className="tab-badge">{listColors.length}</span>}
                 </button>
                 <button
                   type="button"
@@ -1113,7 +1284,7 @@ export function ColorVisualization() {
                           <div
                             key={`${color.name}-${color.hex}-${idx}`}
                             className={classes}
-                            onClick={() => handleColorSelect(color)}
+                            onClick={() => setInspectedColor(color)}
                           >
                             <div
                               className="color-swatch"
@@ -1148,8 +1319,85 @@ export function ColorVisualization() {
               </div>
             )}
 
+            {activeTab === 'list' && (
+              <div className="list-tab">
+                <div className="list-controls">
+                  <label className={`option-check ${listColors.length === 0 ? 'disabled' : ''}`}>
+                    <input
+                      type="checkbox"
+                      checked={plotListOnly}
+                      onChange={e => setPlotListOnly(e.target.checked)}
+                      disabled={listColors.length === 0}
+                    />
+                    <span>Plot List</span>
+                  </label>
+                  {listColors.length > 0 && (
+                    <button
+                      type="button"
+                      className="list-clear-all"
+                      onClick={() => { setListColors([]); setPlotListOnly(false); }}
+                    >
+                      Clear all
+                    </button>
+                  )}
+                </div>
+                {listColors.length === 0 ? (
+                  <div className="color-empty">
+                    No colors in list — open a color and press "Add to List".
+                  </div>
+                ) : (
+                  <div className="color-list">
+                    {listColors.map((color, idx) => (
+                      <div key={`${color.hex}-${idx}`} className="color-item">
+                        <div
+                          className="color-swatch"
+                          style={{ backgroundColor: color.hex }}
+                        />
+                        <div className="color-info">
+                          <div className="color-name">{color.name}</div>
+                          <div className="color-hex">{color.hex.toUpperCase()}</div>
+                          <div className="color-lab">
+                            <LabDisplay l={color.l} a={color.a} b={color.b} />
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          className="list-remove"
+                          onClick={() => handleRemoveFromList(color)}
+                          title="Remove from list"
+                          aria-label="Remove from list"
+                        >
+                          ×
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
             {activeTab === 'settings' && (
               <div className="settings-content">
+                <div className="setting-row">
+                  <div className="setting-label">Plot mode</div>
+                  <div className="setting-radio-group">
+                    {['lab', 'xyz'].map(mode => (
+                      <label key={mode} className="option-check">
+                        <input
+                          type="radio"
+                          name="plot-mode"
+                          value={mode}
+                          checked={plotMode === mode}
+                          onChange={() => setPlotMode(mode)}
+                        />
+                        <span>{mode.toUpperCase()}</span>
+                      </label>
+                    ))}
+                  </div>
+                  <div className="setting-hint">
+                    LAB plots colors in perceptual L*a*b* space. XYZ plots in CIE XYZ color space.
+                  </div>
+                </div>
                 <div className="setting-row">
                   <div className="setting-header">
                     <label className="setting-label" htmlFor="point-size-slider">
@@ -1239,6 +1487,12 @@ export function ColorVisualization() {
                 <div className="inspected-lab">
                   <LabDisplay l={inspectedColor.l} a={inspectedColor.a} b={inspectedColor.b} />
                 </div>
+                <div className="inspected-xyz">
+                  {(() => {
+                    const { x, y, z } = hexToXyz(inspectedColor.hex.replace('#', ''));
+                    return `X:${x.toFixed(4)} Y:${y.toFixed(4)} Z:${z.toFixed(4)}`;
+                  })()}
+                </div>
                 {!hidePercentage && inspectedSimilarity !== null && (
                   <div className="inspected-similarity">
                     {inspectedSimilarity.toFixed(2)}% vs reference
@@ -1246,18 +1500,33 @@ export function ColorVisualization() {
                 )}
               </div>
             </div>
-            {!isAlreadyReference && (
-              <button
-                type="button"
-                className="inspected-promote"
-                onClick={() => {
-                  handleColorSelect(inspectedColor);
-                  setInspectedColor(null);
-                }}
-              >
-                Use as reference
-              </button>
-            )}
+            <div className="inspected-actions">
+              {!isAlreadyReference && (
+                <button
+                  type="button"
+                  className="inspected-promote"
+                  onClick={() => {
+                    handleColorSelect(inspectedColor);
+                    setInspectedColor(null);
+                  }}
+                >
+                  Use as reference
+                </button>
+              )}
+              {(() => {
+                const inList = listColors.some(c => c.hex === inspectedColor.hex);
+                return (
+                  <button
+                    type="button"
+                    className={`inspected-add-list ${inList ? 'in-list' : ''}`}
+                    onClick={() => handleAddToList(inspectedColor)}
+                    disabled={inList}
+                  >
+                    {inList ? 'In List' : 'Add to List'}
+                  </button>
+                );
+              })()}
+            </div>
           </div>
         );
       })()}
