@@ -725,6 +725,45 @@
   cursor: default;
 }
 
+/* Drag-and-drop handle and states */
+.drag-handle {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.1rem;
+  height: 1.4rem;
+  color: #555;
+  font-size: 1rem;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  border-radius: 3px;
+  transition: color 0.15s;
+}
+
+.drag-handle:hover {
+  color: #aaa;
+}
+
+.drag-handle:active {
+  cursor: grabbing;
+  color: #ddd;
+}
+
+.color-item.dragging {
+  opacity: 0.35;
+  border-style: dashed;
+}
+
+.color-item.drag-over-top {
+  border-top: 2px solid #ffd700;
+}
+
+.color-item.drag-over-bottom {
+  border-bottom: 2px solid #ffd700;
+}
+
 /* List Plot tab */
 .list-tab {
   display: flex;

@@ -1,4 +1,6 @@
+import { useRef, useState } from 'react';
 import { DISPLAY_INCREMENT } from '../ColorVisualization';
+import { deltaE2000 } from '../colorUtils';
 import { LabDisplay } from './LabDisplay';
 
 export function ColorListPanel({
@@ -19,6 +21,7 @@ export function ColorListPanel({
   hidePercentage,
   plotMode,
   plotListOnly,
+  labelListColors,
   pointSize,
   isHexSearch,
   isRangeSearch,
@@ -34,11 +37,13 @@ export function ColorListPanel({
   setPlotMode,
   setPointSize,
   setPlotListOnly,
+  setLabelListColors,
   setDisplayLimit,
   setInspectedColor,
   // Callbacks
   onClearReference,
   onRemoveFromList,
+  onReorderList,
   onClearList,
   onMinimize,
   listScrollRef,
@@ -46,6 +51,48 @@ export function ColorListPanel({
 }) {
   const thresholdValueNum = parseFloat(similarityThreshold);
   const hasActiveThreshold = !Number.isNaN(thresholdValueNum) && !!selectedColor;
+
+  const dragIndexRef = useRef(null);
+  const overIndexRef = useRef(null);
+  const [dragIndex, setDragIndex] = useState(null);
+  const [overIndex, setOverIndex] = useState(null);
+
+  const handleDragStart = (e, index) => {
+    e.preventDefault();
+    dragIndexRef.current = index;
+    overIndexRef.current = index;
+    setDragIndex(index);
+    setOverIndex(index);
+
+    const onMove = (ev) => {
+      const el = document.elementFromPoint(ev.clientX, ev.clientY);
+      const itemEl = el?.closest('[data-list-index]');
+      if (itemEl) {
+        const idx = parseInt(itemEl.dataset.listIndex, 10);
+        if (!isNaN(idx) && idx !== overIndexRef.current) {
+          overIndexRef.current = idx;
+          setOverIndex(idx);
+        }
+      }
+    };
+
+    const onUp = () => {
+      document.removeEventListener('pointermove', onMove);
+      document.removeEventListener('pointerup', onUp);
+      const from = dragIndexRef.current;
+      const to = overIndexRef.current;
+      dragIndexRef.current = null;
+      overIndexRef.current = null;
+      setDragIndex(null);
+      setOverIndex(null);
+      if (from !== null && to !== null && from !== to) {
+        onReorderList(from, to);
+      }
+    };
+
+    document.addEventListener('pointermove', onMove);
+    document.addEventListener('pointerup', onUp);
+  };
 
   return (
     <div className="color-list-panel">
@@ -305,6 +352,15 @@ export function ColorListPanel({
               />
               <span>Plot List</span>
             </label>
+            <label className={`option-check ${!plotListOnly ? 'disabled' : ''}`}>
+              <input
+                type="checkbox"
+                checked={labelListColors}
+                onChange={e => setLabelListColors(e.target.checked)}
+                disabled={!plotListOnly}
+              />
+              <span>Label colors</span>
+            </label>
             {listColors.length > 0 && (
               <button type="button" className="list-clear-all" onClick={onClearList}>
                 Clear all
@@ -317,31 +373,57 @@ export function ColorListPanel({
             </div>
           ) : (
             <div className="color-list">
-              {listColors.map((color, idx) => (
-                <div
-                  key={`${color.hex}-${idx}`}
-                  className={`color-item${inspectedColor?.hex === color.hex ? ' selected' : ''}`}
-                  onClick={() => setInspectedColor(color)}
-                >
-                  <div className="color-swatch" style={{ backgroundColor: color.hex }} />
-                  <div className="color-info">
-                    <div className="color-name">{color.name}</div>
-                    <div className="color-hex">{color.hex.toUpperCase()}</div>
-                    <div className="color-lab">
-                      <LabDisplay l={color.l} a={color.a} b={color.b} />
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    className="list-remove"
-                    onClick={() => onRemoveFromList(color)}
-                    title="Remove from list"
-                    aria-label="Remove from list"
+              {listColors.map((color, idx) => {
+                const isDragging = dragIndex === idx;
+                const isOverTarget = overIndex === idx && dragIndex !== null && dragIndex !== idx;
+                const overTop = isOverTarget && dragIndex > idx;
+                const overBottom = isOverTarget && dragIndex < idx;
+                const classes = [
+                  'color-item',
+                  inspectedColor?.hex === color.hex ? 'selected' : '',
+                  isDragging ? 'dragging' : '',
+                  overTop ? 'drag-over-top' : '',
+                  overBottom ? 'drag-over-bottom' : '',
+                ].filter(Boolean).join(' ');
+                return (
+                  <div
+                    key={`${color.hex}-${idx}`}
+                    className={classes}
+                    data-list-index={idx}
+                    onClick={() => setInspectedColor(color)}
                   >
-                    ×
-                  </button>
-                </div>
-              ))}
+                    <div
+                      className="drag-handle"
+                      onPointerDown={e => handleDragStart(e, idx)}
+                      onClick={e => e.stopPropagation()}
+                    >
+                      ⠿
+                    </div>
+                    <div className="color-swatch" style={{ backgroundColor: color.hex }} />
+                    <div className="color-info">
+                      <div className="color-name">{color.name}</div>
+                      <div className="color-hex">{color.hex.toUpperCase()}</div>
+                      <div className="color-lab">
+                        <LabDisplay l={color.l} a={color.a} b={color.b} />
+                      </div>
+                    </div>
+                    {!hidePercentage && selectedColor && (
+                      <div className="color-similarity">
+                        {Math.max(0, 100 - deltaE2000(selectedColor.l, selectedColor.a, selectedColor.b, color.l, color.a, color.b)).toFixed(2)}%
+                      </div>
+                    )}
+                    <button
+                      type="button"
+                      className="list-remove"
+                      onClick={e => { e.stopPropagation(); onRemoveFromList(color); }}
+                      title="Remove from list"
+                      aria-label="Remove from list"
+                    >
+                      ×
+                    </button>
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>

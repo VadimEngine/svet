@@ -10,6 +10,53 @@ export const INITIAL_DISPLAY_LIMIT = 100;
 export const DISPLAY_INCREMENT = 100;
 const SCROLL_LOAD_THRESHOLD_PX = 250;
 
+function createLabelSprite(name, hex) {
+  const res = 2;
+  const fontSize = 13 * res;
+  const padding = 5 * res;
+  const lineGap = 3 * res;
+
+  const measure = document.createElement('canvas').getContext('2d');
+  measure.font = `bold ${fontSize}px sans-serif`;
+  const nameW = measure.measureText(name).width;
+  measure.font = `${fontSize}px monospace`;
+  const hexW = measure.measureText(hex).width;
+
+  const w = Math.ceil(Math.max(nameW, hexW) + padding * 2);
+  const h = Math.ceil(fontSize * 2 + lineGap + padding * 2);
+
+  const canvas = document.createElement('canvas');
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext('2d');
+
+  const r = 4 * res;
+  ctx.fillStyle = 'rgba(0,0,0,0.68)';
+  ctx.beginPath();
+  ctx.moveTo(r, 0); ctx.lineTo(w - r, 0);
+  ctx.arcTo(w, 0, w, r, r); ctx.lineTo(w, h - r);
+  ctx.arcTo(w, h, w - r, h, r); ctx.lineTo(r, h);
+  ctx.arcTo(0, h, 0, h - r, r); ctx.lineTo(0, r);
+  ctx.arcTo(0, 0, r, 0, r);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.font = `bold ${fontSize}px sans-serif`;
+  ctx.fillStyle = '#ffffff';
+  ctx.fillText(name, padding, padding + fontSize);
+
+  ctx.font = `${fontSize}px monospace`;
+  ctx.fillStyle = '#aaaaaa';
+  ctx.fillText(hex, padding, padding + fontSize + lineGap + fontSize);
+
+  const texture = new THREE.CanvasTexture(canvas);
+  const material = new THREE.SpriteMaterial({ map: texture, transparent: true, depthTest: false });
+  const sprite = new THREE.Sprite(material);
+  const worldH = 10;
+  sprite.scale.set((w / h) * worldH, worldH, 1);
+  return sprite;
+}
+
 export function ColorVisualization() {
   const containerRef = useRef(null);
   const sceneRef = useRef(null);
@@ -28,6 +75,7 @@ export function ColorVisualization() {
   const needsRenderRef = useRef(true);
   const listScrollRef = useRef(null);
   const raycasterRef = useRef(null);
+  const labelSpritesGroupRef = useRef(null);
 
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -46,7 +94,15 @@ export function ColorVisualization() {
   const [filterByThreshold, setFilterByThreshold] = useState(true);
   const [hidePercentage, setHidePercentage] = useState(false);
   const [plotMode, setPlotMode] = useState('lab');
-  const [listColors, setListColors] = useState([]);
+  const [labelListColors, setLabelListColors] = useState(false);
+  const [listColors, setListColors] = useState(() => {
+    try {
+      const saved = localStorage.getItem('colorListPlot');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
   const [plotListOnly, setPlotListOnly] = useState(false);
 
   // ─── Scene initialization ────────────────────────────────────────────────────
@@ -381,6 +437,15 @@ export function ColorVisualization() {
     setListColors(prev => prev.filter(c => c.hex !== color.hex));
   };
 
+  const handleReorderList = (from, to) => {
+    setListColors(prev => {
+      const updated = [...prev];
+      const [item] = updated.splice(from, 1);
+      updated.splice(to, 0, item);
+      return updated;
+    });
+  };
+
   const handleClearReference = () => {
     setSelectedColor(null);
     setSortedColors(colorsRef.current);
@@ -392,6 +457,12 @@ export function ColorVisualization() {
   };
 
   // ─── Derived state ───────────────────────────────────────────────────────────
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('colorListPlot', JSON.stringify(listColors));
+    } catch {}
+  }, [listColors]);
 
   // Turn off plotListOnly automatically if the list is cleared.
   useEffect(() => {
@@ -666,6 +737,40 @@ export function ColorVisualization() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [plotMode]);
 
+  useEffect(() => {
+    const scene = sceneRef.current;
+    if (!scene) return;
+
+    const clearLabels = () => {
+      if (labelSpritesGroupRef.current) {
+        labelSpritesGroupRef.current.children.forEach(s => {
+          s.material.map.dispose();
+          s.material.dispose();
+        });
+        scene.remove(labelSpritesGroupRef.current);
+        labelSpritesGroupRef.current = null;
+        needsRenderRef.current = true;
+      }
+    };
+
+    clearLabels();
+
+    if (plotListOnly && labelListColors && listColors.length > 0) {
+      const group = new THREE.Group();
+      listColors.forEach(color => {
+        const sprite = createLabelSprite(color.name, color.hex.toUpperCase());
+        const pos = getColorPlotPos(color, plotMode);
+        sprite.position.set(pos.x, pos.y + 6, pos.z);
+        group.add(sprite);
+      });
+      labelSpritesGroupRef.current = group;
+      scene.add(group);
+      needsRenderRef.current = true;
+    }
+
+    return clearLabels;
+  }, [plotListOnly, labelListColors, listColors, plotMode]);
+
   // ─── Render helpers ──────────────────────────────────────────────────────────
 
   const visibleColors = useMemo(
@@ -706,6 +811,7 @@ export function ColorVisualization() {
           hidePercentage={hidePercentage}
           plotMode={plotMode}
           plotListOnly={plotListOnly}
+          labelListColors={labelListColors}
           pointSize={pointSize}
           isHexSearch={isHexSearch}
           isRangeSearch={isRangeSearch}
@@ -720,10 +826,12 @@ export function ColorVisualization() {
           setPlotMode={setPlotMode}
           setPointSize={setPointSize}
           setPlotListOnly={setPlotListOnly}
+          setLabelListColors={setLabelListColors}
           setDisplayLimit={setDisplayLimit}
           setInspectedColor={setInspectedColor}
           onClearReference={handleClearReference}
           onRemoveFromList={handleRemoveFromList}
+          onReorderList={handleReorderList}
           onClearList={() => { setListColors([]); setPlotListOnly(false); }}
           onMinimize={() => setPanelCollapsed(true)}
           listScrollRef={listScrollRef}
