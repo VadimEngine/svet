@@ -286,6 +286,7 @@ export function ColorListPanel({
             className="color-list"
             ref={listScrollRef}
             onScroll={onListScroll}
+            style={selectedColor ? { borderLeft: `6px solid ${selectedColor.hex}` } : {}}
           >
             {filteredColors.length === 0 ? (
               <div className="color-empty">No colors match the current filters.</div>

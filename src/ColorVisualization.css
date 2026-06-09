@@ -420,6 +420,7 @@
   overflow-y: auto;
   overscroll-behavior: contain;
   padding-right: 2px;
+  transition: border-left-color 0.3s ease;
 }
 
 .reference-color,
@@ -443,7 +444,7 @@
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  padding: 0.4rem 0.5rem;
+  padding: 0.4rem 0.5rem 0.4rem 0;
   background: rgba(255, 255, 255, 0.05);
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 4px;
@@ -468,7 +469,10 @@
   height: 28px;
   border-radius: 4px;
   flex-shrink: 0;
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  margin-left: -1px;
+  border: none !important;
+  box-shadow: none !important;
+  outline: none !important;
 }
 
 .color-info {
@@ -513,7 +517,7 @@
 .color-item.within-threshold {
   background: rgba(80, 220, 120, 0.12);
   border-color: rgba(80, 220, 120, 0.5);
-  box-shadow: inset 3px 0 0 rgba(80, 220, 120, 0.85);
+  box-shadow: inset 2px 0 0 rgba(80, 220, 120, 0.85);
 }
 
 .color-item.within-threshold:hover {
@@ -528,7 +532,7 @@
 .color-item.within-threshold.selected {
   background: rgba(255, 255, 0, 0.18);
   border-color: rgba(255, 255, 0, 0.6);
-  box-shadow: inset 3px 0 0 rgba(80, 220, 120, 0.85);
+  box-shadow: inset 2px 0 0 rgba(80, 220, 120, 0.85);
 }
 
 .filter-row-bottom {
