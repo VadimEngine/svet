@@ -95,14 +95,17 @@ export function ColorVisualization() {
   const [hidePercentage, setHidePercentage] = useState(false);
   const [plotMode, setPlotMode] = useState('lab');
   const [labelListColors, setLabelListColors] = useState(false);
-  const [listColors, setListColors] = useState(() => {
+  const [colorLists, setColorLists] = useState(() => {
     try {
-      const saved = localStorage.getItem('colorListPlot');
-      return saved ? JSON.parse(saved) : [];
-    } catch {
-      return [];
-    }
+      const saved = localStorage.getItem('colorLists');
+      if (saved) return JSON.parse(saved);
+      // Migrate old single list
+      const old = localStorage.getItem('colorListPlot');
+      if (old) return [{ id: 'list-0', name: 'List 1', colors: JSON.parse(old) }];
+    } catch {}
+    return [{ id: 'list-0', name: 'List 1', colors: [] }];
   });
+  const [activeListId, setActiveListId] = useState('list-0');
   const [plotListOnly, setPlotListOnly] = useState(false);
 
   // ─── Scene initialization ────────────────────────────────────────────────────
@@ -429,21 +432,50 @@ export function ColorVisualization() {
     setSortedColors(sorted);
   };
 
+  const activeList = colorLists.find(l => l.id === activeListId) ?? colorLists[0];
+  const listColors = activeList?.colors ?? [];
+
+  const updateActiveList = (updater) =>
+    setColorLists(prev => prev.map(l => l.id === activeListId ? { ...l, colors: updater(l.colors) } : l));
+
   const handleAddToList = (color) => {
-    setListColors(prev => prev.some(c => c.hex === color.hex) ? prev : [...prev, color]);
+    updateActiveList(prev => prev.some(c => c.hex === color.hex) ? prev : [...prev, color]);
   };
 
   const handleRemoveFromList = (color) => {
-    setListColors(prev => prev.filter(c => c.hex !== color.hex));
+    updateActiveList(prev => prev.filter(c => c.hex !== color.hex));
   };
 
   const handleReorderList = (from, to) => {
-    setListColors(prev => {
+    updateActiveList(prev => {
       const updated = [...prev];
       const [item] = updated.splice(from, 1);
       updated.splice(to, 0, item);
       return updated;
     });
+  };
+
+  const handleCreateList = () => {
+    const id = `list-${Date.now()}`;
+    setColorLists(prev => [...prev, { id, name: `List ${prev.length + 1}`, colors: [] }]);
+    setActiveListId(id);
+  };
+
+  const handleDeleteList = (id) => {
+    const remaining = colorLists.filter(l => l.id !== id);
+    if (remaining.length === 0) {
+      const fallback = { id: `list-${Date.now()}`, name: 'List 1', colors: [] };
+      setColorLists([fallback]);
+      setActiveListId(fallback.id);
+    } else {
+      setColorLists(remaining);
+      if (activeListId === id) setActiveListId(remaining[0].id);
+    }
+    setPlotListOnly(false);
+  };
+
+  const handleRenameList = (id, name) => {
+    setColorLists(prev => prev.map(l => l.id === id ? { ...l, name } : l));
   };
 
   const handleClearReference = () => {
@@ -460,9 +492,9 @@ export function ColorVisualization() {
 
   useEffect(() => {
     try {
-      localStorage.setItem('colorListPlot', JSON.stringify(listColors));
+      localStorage.setItem('colorLists', JSON.stringify(colorLists));
     } catch {}
-  }, [listColors]);
+  }, [colorLists]);
 
   // Turn off plotListOnly automatically if the list is cleared.
   useEffect(() => {
@@ -519,7 +551,13 @@ export function ColorVisualization() {
 
   // Filtered list: name/hex search + similarity threshold on top of range base.
   const filteredColors = useMemo(() => {
-    const base = rangeFilteredColors !== null ? rangeFilteredColors : sortedColors;
+    let base = rangeFilteredColors !== null ? rangeFilteredColors : sortedColors;
+    if (rangeFilteredColors !== null && selectedColor) {
+      base = base.map(c => {
+        const distance = deltaE2000(selectedColor.l, selectedColor.a, selectedColor.b, c.l, c.a, c.b);
+        return { ...c, distance, similarity: Math.max(0, 100 - distance) };
+      });
+    }
     const normalizeForSearch = (s) => s.replace(/['']/g, "'").toLowerCase();
     const normalizedSearch = normalizeForSearch(searchTerm.trim());
     const searchHex = normalizedSearch.replace(/^#/, '');
@@ -795,8 +833,11 @@ export function ColorVisualization() {
 
       {sortedColors.length > 0 && !panelCollapsed && (
         <ColorListPanel
+          allColors={sortedColors}
           selectedColor={selectedColor}
           inspectedColor={inspectedColor}
+          colorLists={colorLists}
+          activeListId={activeListId}
           listColors={listColors}
           filteredColors={filteredColors}
           visibleColors={visibleColors}
@@ -829,10 +870,14 @@ export function ColorVisualization() {
           setLabelListColors={setLabelListColors}
           setDisplayLimit={setDisplayLimit}
           setInspectedColor={setInspectedColor}
+          setActiveListId={setActiveListId}
           onClearReference={handleClearReference}
           onRemoveFromList={handleRemoveFromList}
           onReorderList={handleReorderList}
-          onClearList={() => { setListColors([]); setPlotListOnly(false); }}
+          onClearList={() => { updateActiveList(() => []); setPlotListOnly(false); }}
+          onCreateList={handleCreateList}
+          onDeleteList={handleDeleteList}
+          onRenameList={handleRenameList}
           onMinimize={() => setPanelCollapsed(true)}
           listScrollRef={listScrollRef}
           onListScroll={handleListScroll}

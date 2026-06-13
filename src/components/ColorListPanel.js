@@ -1,12 +1,16 @@
-import { useRef, useState } from 'react';
+import { useRef, useState, useEffect } from 'react';
 import { DISPLAY_INCREMENT } from '../ColorVisualization';
 import { deltaE2000 } from '../colorUtils';
 import { LabDisplay } from './LabDisplay';
+import { QuizTab } from './QuizTab';
 
 export function ColorListPanel({
   // State
+  allColors,
   selectedColor,
   inspectedColor,
+  colorLists,
+  activeListId,
   listColors,
   filteredColors,
   visibleColors,
@@ -40,11 +44,15 @@ export function ColorListPanel({
   setLabelListColors,
   setDisplayLimit,
   setInspectedColor,
+  setActiveListId,
   // Callbacks
   onClearReference,
   onRemoveFromList,
   onReorderList,
   onClearList,
+  onCreateList,
+  onDeleteList,
+  onRenameList,
   onMinimize,
   listScrollRef,
   onListScroll,
@@ -52,10 +60,37 @@ export function ColorListPanel({
   const thresholdValueNum = parseFloat(similarityThreshold);
   const hasActiveThreshold = !Number.isNaN(thresholdValueNum) && !!selectedColor;
 
+  const handleExportList = () => {
+    const list = colorLists.find(l => l.id === activeListId);
+    if (!list || list.colors.length === 0) return;
+    const rows = ['name,hex', ...list.colors.map(c => `"${c.name.replace(/"/g, '""')}",${c.hex}`)];
+    const blob = new Blob([rows.join('\n')], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${list.name.replace(/[^a-z0-9]/gi, '_') || 'colors'}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   const dragIndexRef = useRef(null);
   const overIndexRef = useRef(null);
   const [dragIndex, setDragIndex] = useState(null);
   const [overIndex, setOverIndex] = useState(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const hamburgerRef = useRef(null);
+  const settingsDropdownRef = useRef(null);
+
+  useEffect(() => {
+    if (!settingsOpen) return;
+    const handleClick = (e) => {
+      if (!hamburgerRef.current?.contains(e.target) && !settingsDropdownRef.current?.contains(e.target)) {
+        setSettingsOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [settingsOpen]);
 
   const handleDragStart = (e, index) => {
     e.preventDefault();
@@ -96,39 +131,101 @@ export function ColorListPanel({
 
   return (
     <div className="color-list-panel">
-      <div className="panel-header">
-        <div className="panel-tabs">
-          <button
-            type="button"
-            className={`panel-tab ${activeTab === 'colors' ? 'active' : ''}`}
-            onClick={() => setActiveTab('colors')}
-          >
-            Colors
-          </button>
-          <button
-            type="button"
-            className={`panel-tab ${activeTab === 'list' ? 'active' : ''}`}
-            onClick={() => setActiveTab('list')}
-          >
-            List Plot{listColors.length > 0 && <span className="tab-badge">{listColors.length}</span>}
-          </button>
-          <button
-            type="button"
-            className={`panel-tab ${activeTab === 'settings' ? 'active' : ''}`}
-            onClick={() => setActiveTab('settings')}
-          >
-            Settings
-          </button>
+      <div className="panel-header-wrapper">
+        <div className="panel-header">
+          <div className="panel-tabs">
+            <button
+              type="button"
+              className={`panel-tab ${activeTab === 'colors' ? 'active' : ''}`}
+              onClick={() => setActiveTab('colors')}
+            >
+              Colors
+            </button>
+            <button
+              type="button"
+              className={`panel-tab ${activeTab === 'list' ? 'active' : ''}`}
+              onClick={() => setActiveTab('list')}
+            >
+              List Plot{colorLists.reduce((s, l) => s + l.colors.length, 0) > 0 && <span className="tab-badge">{colorLists.reduce((s, l) => s + l.colors.length, 0)}</span>}
+            </button>
+            <button
+              type="button"
+              className={`panel-tab ${activeTab === 'quiz' ? 'active' : ''}`}
+              onClick={() => setActiveTab('quiz')}
+            >
+              Quiz
+            </button>
+          </div>
+          <div className="panel-header-actions">
+            <button
+              ref={hamburgerRef}
+              type="button"
+              className={`panel-settings-btn${settingsOpen ? ' active' : ''}`}
+              onClick={() => setSettingsOpen(v => !v)}
+              title="Settings"
+              aria-label="Settings"
+            >
+              ⚙
+            </button>
+            <button
+              type="button"
+              className="panel-minimize"
+              onClick={onMinimize}
+              title="Minimize panel"
+              aria-label="Minimize panel"
+            >
+              −
+            </button>
+          </div>
         </div>
-        <button
-          type="button"
-          className="panel-minimize"
-          onClick={onMinimize}
-          title="Minimize panel"
-          aria-label="Minimize panel"
-        >
-          −
-        </button>
+
+        {settingsOpen && (
+          <div className="settings-dropdown" ref={settingsDropdownRef}>
+            <div className="setting-row">
+              <div className="setting-label">Plot mode</div>
+              <div className="setting-radio-group">
+                {['lab', 'xyz'].map(mode => (
+                  <label key={mode} className="option-check">
+                    <input
+                      type="radio"
+                      name="plot-mode"
+                      value={mode}
+                      checked={plotMode === mode}
+                      onChange={() => setPlotMode(mode)}
+                    />
+                    <span>{mode.toUpperCase()}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+            <div className="setting-row">
+              <div className="setting-header">
+                <label className="setting-label" htmlFor="point-size-slider">Point size</label>
+                <span className="setting-value">{pointSize.toFixed(1)}</span>
+              </div>
+              <input
+                id="point-size-slider"
+                type="range"
+                className="threshold-slider"
+                min="0.3"
+                max="6"
+                step="0.1"
+                value={pointSize}
+                onChange={(e) => setPointSize(parseFloat(e.target.value))}
+              />
+            </div>
+            <div className="setting-row">
+              <label className="option-check">
+                <input
+                  type="checkbox"
+                  checked={hidePercentage}
+                  onChange={(e) => setHidePercentage(e.target.checked)}
+                />
+                <span>Hide percentage</span>
+              </label>
+            </div>
+          </div>
+        )}
       </div>
 
       {activeTab === 'colors' && (
@@ -283,7 +380,7 @@ export function ColorListPanel({
           </div>
 
           <div
-            className="color-list"
+            className={`color-list${selectedColor ? ' has-reference' : ''}`}
             ref={listScrollRef}
             onScroll={onListScroll}
             style={selectedColor ? { borderLeft: `6px solid ${selectedColor.hex}` } : {}}
@@ -317,7 +414,7 @@ export function ColorListPanel({
                           <LabDisplay l={color.l} a={color.a} b={color.b} />
                         </div>
                       </div>
-                      {!hidePercentage && (selectedColor || isHexSearch) && color.similarity !== undefined && (
+                      {!hidePercentage && (selectedColor || isHexSearch || isRangeSearch) && color.similarity !== undefined && (
                         <div className="color-similarity">
                           {color.similarity.toFixed(2)}%
                         </div>
@@ -343,6 +440,53 @@ export function ColorListPanel({
 
       {activeTab === 'list' && (
         <div className="list-tab">
+          {/* List selector row */}
+          <div className="list-selector-row">
+            <div className="list-selector-tabs">
+              {colorLists.map(list => (
+                <button
+                  key={list.id}
+                  type="button"
+                  className={`list-selector-btn${list.id === activeListId ? ' active' : ''}`}
+                  onClick={() => setActiveListId(list.id)}
+                >
+                  {list.name}
+                  {list.colors.length > 0 && <span className="tab-badge">{list.colors.length}</span>}
+                </button>
+              ))}
+            </div>
+            <button
+              type="button"
+              className="list-new-btn"
+              onClick={onCreateList}
+              title="New list"
+            >
+              +
+            </button>
+          </div>
+
+          {/* Active list name + delete */}
+          <div className="list-meta-row">
+            <input
+              type="text"
+              className="list-name-input"
+              value={colorLists.find(l => l.id === activeListId)?.name ?? ''}
+              onChange={e => onRenameList(activeListId, e.target.value)}
+              placeholder="List name"
+            />
+            {colorLists.length > 1 && (
+              <button
+                type="button"
+                className="list-delete-btn"
+                onClick={() => onDeleteList(activeListId)}
+                title="Delete this list"
+              >
+                Delete
+              </button>
+            )}
+          </div>
+
+          {/* Plot / label / clear controls */}
           <div className="list-controls">
             <label className={`option-check ${listColors.length === 0 ? 'disabled' : ''}`}>
               <input
@@ -363,14 +507,21 @@ export function ColorListPanel({
               <span>Label colors</span>
             </label>
             {listColors.length > 0 && (
-              <button type="button" className="list-clear-all" onClick={onClearList}>
-                Clear all
-              </button>
+              <>
+                <button type="button" className="list-export-btn" onClick={handleExportList}>
+                  Export CSV
+                </button>
+                <button type="button" className="list-clear-all" onClick={onClearList}>
+                  Clear
+                </button>
+              </>
             )}
           </div>
+
+          {/* Color items */}
           {listColors.length === 0 ? (
             <div className="color-empty">
-              No colors in list — open a color and press "Add to List".
+              No colors — open a color and press "Add to List".
             </div>
           ) : (
             <div className="color-list">
@@ -430,64 +581,9 @@ export function ColorListPanel({
         </div>
       )}
 
-      {activeTab === 'settings' && (
-        <div className="settings-content">
-          <div className="setting-row">
-            <div className="setting-label">Plot mode</div>
-            <div className="setting-radio-group">
-              {['lab', 'xyz'].map(mode => (
-                <label key={mode} className="option-check">
-                  <input
-                    type="radio"
-                    name="plot-mode"
-                    value={mode}
-                    checked={plotMode === mode}
-                    onChange={() => setPlotMode(mode)}
-                  />
-                  <span>{mode.toUpperCase()}</span>
-                </label>
-              ))}
-            </div>
-            <div className="setting-hint">
-              LAB plots colors in perceptual L*a*b* space. XYZ plots in CIE XYZ color space.
-            </div>
-          </div>
-          <div className="setting-row">
-            <div className="setting-header">
-              <label className="setting-label" htmlFor="point-size-slider">
-                Point size
-              </label>
-              <span className="setting-value">{pointSize.toFixed(1)}</span>
-            </div>
-            <input
-              id="point-size-slider"
-              type="range"
-              className="threshold-slider"
-              min="0.3"
-              max="6"
-              step="0.1"
-              value={pointSize}
-              onChange={(e) => setPointSize(parseFloat(e.target.value))}
-            />
-            <div className="setting-hint">
-              Adjust how large the points appear in the 3D plot.
-            </div>
-          </div>
-          <div className="setting-row">
-            <label className="option-check">
-              <input
-                type="checkbox"
-                checked={hidePercentage}
-                onChange={(e) => setHidePercentage(e.target.checked)}
-              />
-              <span>Hide percentage</span>
-            </label>
-            <div className="setting-hint">
-              Hide the similarity percentage in the color list and inspected color panel.
-            </div>
-          </div>
-        </div>
-      )}
+      <div style={{ display: activeTab === 'quiz' ? 'flex' : 'none', flexDirection: 'column', flex: '1 1 auto', minHeight: 0 }}>
+        <QuizTab allColors={allColors} />
+      </div>
     </div>
   );
 }
