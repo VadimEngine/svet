@@ -3,6 +3,8 @@ import { DISPLAY_INCREMENT } from '../ColorVisualization';
 import { deltaE2000 } from '../colorUtils';
 import { LabDisplay } from './LabDisplay';
 import { QuizTab } from './QuizTab';
+import { BuildTab } from './BuildTab';
+import packageJson from '../../package.json';
 
 export function ColorListPanel({
   // State
@@ -49,6 +51,7 @@ export function ColorListPanel({
   onClearReference,
   onRemoveFromList,
   onReorderList,
+  onSortListByReference,
   onClearList,
   onCreateList,
   onDeleteList,
@@ -146,7 +149,14 @@ export function ColorListPanel({
               className={`panel-tab ${activeTab === 'list' ? 'active' : ''}`}
               onClick={() => setActiveTab('list')}
             >
-              List Plot{colorLists.reduce((s, l) => s + l.colors.length, 0) > 0 && <span className="tab-badge">{colorLists.reduce((s, l) => s + l.colors.length, 0)}</span>}
+              List{colorLists.reduce((s, l) => s + l.colors.length, 0) > 0 && <span className="tab-badge">{colorLists.reduce((s, l) => s + l.colors.length, 0)}</span>}
+            </button>
+            <button
+              type="button"
+              className={`panel-tab ${activeTab === 'build' ? 'active' : ''}`}
+              onClick={() => setActiveTab('build')}
+            >
+              Build
             </button>
             <button
               type="button"
@@ -224,6 +234,7 @@ export function ColorListPanel({
                 <span>Hide percentage</span>
               </label>
             </div>
+            <div className="settings-version">v{packageJson.version}</div>
           </div>
         )}
       </div>
@@ -506,6 +517,15 @@ export function ColorListPanel({
               />
               <span>Label colors</span>
             </label>
+            <button
+              type="button"
+              className="list-sort-btn"
+              onClick={onSortListByReference}
+              disabled={!selectedColor || listColors.length < 2}
+              title={selectedColor ? 'Sort list by similarity to the reference color' : 'Select a reference color to enable sorting'}
+            >
+              Sort by reference
+            </button>
             {listColors.length > 0 && (
               <>
                 <button type="button" className="list-export-btn" onClick={handleExportList}>
@@ -583,6 +603,10 @@ export function ColorListPanel({
 
       <div style={{ display: activeTab === 'quiz' ? 'flex' : 'none', flexDirection: 'column', flex: '1 1 auto', minHeight: 0 }}>
         <QuizTab allColors={allColors} />
+      </div>
+
+      <div style={{ display: activeTab === 'build' ? 'flex' : 'none', flexDirection: 'column', flex: '1 1 auto', minHeight: 0 }}>
+        <BuildTab allColors={allColors} plotMode={plotMode} setInspectedColor={setInspectedColor} />
       </div>
     </div>
   );

@@ -455,6 +455,14 @@ export function ColorVisualization() {
     });
   };
 
+  const handleSortListByReference = () => {
+    if (!selectedColor) return;
+    updateActiveList(prev => [...prev].sort((a, b) =>
+      deltaE2000(selectedColor.l, selectedColor.a, selectedColor.b, a.l, a.a, a.b) -
+      deltaE2000(selectedColor.l, selectedColor.a, selectedColor.b, b.l, b.a, b.b)
+    ));
+  };
+
   const handleCreateList = () => {
     const id = `list-${Date.now()}`;
     setColorLists(prev => [...prev, { id, name: `List ${prev.length + 1}`, colors: [] }]);
@@ -874,6 +882,7 @@ export function ColorVisualization() {
           onClearReference={handleClearReference}
           onRemoveFromList={handleRemoveFromList}
           onReorderList={handleReorderList}
+          onSortListByReference={handleSortListByReference}
           onClearList={() => { updateActiveList(() => []); setPlotListOnly(false); }}
           onCreateList={handleCreateList}
           onDeleteList={handleDeleteList}

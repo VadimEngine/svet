@@ -27,6 +27,27 @@ export const hexToXyz = (hex) => {
   };
 };
 
+export const xyzToHex = (X, Y, Z) => {
+  const gamma = (c) => c <= 0.0031308 ? 12.92 * c : 1.055 * Math.pow(c, 1 / 2.4) - 0.055;
+  const clamp = (c) => Math.max(0, Math.min(1, c));
+  const r = clamp(gamma( 3.2406 * X - 1.5372 * Y - 0.4986 * Z));
+  const g = clamp(gamma(-0.9689 * X + 1.8758 * Y + 0.0415 * Z));
+  const b = clamp(gamma( 0.0557 * X - 0.2040 * Y + 1.0570 * Z));
+  return '#' + [r, g, b].map(c => Math.round(c * 255).toString(16).padStart(2, '0')).join('');
+};
+
+export const labToHex = (L, a, b) => {
+  const fy = (L + 16) / 116;
+  const fx = a / 500 + fy;
+  const fz = fy - b / 200;
+  const d = 6 / 29;
+  const f = (t) => t > d ? t * t * t : 3 * d * d * (t - 4 / 29);
+  const X = 0.95047 * f(fx);
+  const Y = 1.00000 * f(fy);
+  const Z = 1.08883 * f(fz);
+  return xyzToHex(X, Y, Z);
+};
+
 // Returns 3D plot position for a color given the current plot mode.
 // LAB: a* → X, L* → Y, b* → Z  (bipolar axes, range ~±150 / 0-100)
 // XYZ: X → x, Y → y, Z → z     (all positive, D65 white at ~143/100/163)

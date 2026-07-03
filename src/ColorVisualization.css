@@ -45,6 +45,14 @@
 .panel-tabs {
   display: flex;
   gap: 0.25rem;
+  overflow-x: auto;
+  flex: 1;
+  min-width: 0;
+  scrollbar-width: none;
+}
+
+.panel-tabs::-webkit-scrollbar {
+  display: none;
 }
 
 .panel-tab {
@@ -112,6 +120,14 @@
   flex-direction: column;
   gap: 0.6rem;
   box-shadow: 0 8px 20px rgba(0, 0, 0, 0.5);
+}
+
+.settings-version {
+  text-align: right;
+  color: #666;
+  font-size: 0.72rem;
+  padding-top: 0.4rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .panel-minimize {
@@ -317,6 +333,14 @@
   width: 70px;
   padding: 0.35rem 0.5rem;
   text-align: right;
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
+.filter-input-compact::-webkit-outer-spin-button,
+.filter-input-compact::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
 }
 
 .threshold-slider {
@@ -943,9 +967,33 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.4rem;
   flex-shrink: 0;
   padding-bottom: 0.4rem;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.list-sort-btn {
+  background: transparent;
+  border: 1px solid rgba(255, 215, 0, 0.35);
+  color: #ffd700;
+  padding: 0.2rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  cursor: pointer;
+  transition: background 0.15s;
+  white-space: nowrap;
+}
+
+.list-sort-btn:hover:not(:disabled) {
+  background: rgba(255, 215, 0, 0.12);
+}
+
+.list-sort-btn:disabled {
+  border-color: rgba(255, 255, 255, 0.15);
+  color: #666;
+  cursor: not-allowed;
 }
 
 .list-export-btn {
@@ -1327,6 +1375,98 @@
 .quiz-win-badge {
   font-size: 0.75rem;
   color: #6cdc86;
+}
+
+.build-tab {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.build-swatch-section {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.4rem;
+  flex-shrink: 0;
+}
+
+.build-swatch {
+  width: 80px;
+  height: 80px;
+  border-radius: 8px;
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+}
+
+.build-hex {
+  color: #ffd700;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.85rem;
+  letter-spacing: 0.02em;
+}
+
+.build-sliders {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  flex-shrink: 0;
+}
+
+.build-slider-track {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.build-slider-track .threshold-slider {
+  flex: 1;
+}
+
+.build-step-btn {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: #ccc;
+  border-radius: 4px;
+  font-size: 0.85rem;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.build-step-btn:hover {
+  background: rgba(255, 215, 0, 0.12);
+  border-color: rgba(255, 215, 0, 0.4);
+  color: #ffd700;
+}
+
+.build-nearest {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.build-nearest-label {
+  color: #ffd700;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  flex-shrink: 0;
+}
+
+.build-nearest-list {
+  padding-right: 2px;
 }
 
 .error {
