@@ -733,6 +733,13 @@
   min-width: 0;
 }
 
+.inspected-name-row,
+.inspected-hex-row {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
 .inspected-name {
   color: #fff;
   font-weight: 600;
@@ -740,12 +747,40 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  min-width: 0;
 }
 
 .inspected-hex {
   color: #6cdc86;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 0.75rem;
+}
+
+.inspected-copy-btn {
+  flex-shrink: 0;
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: #888;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border-radius: 3px;
+  font-size: 0.68rem;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.inspected-copy-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #ddd;
+  border-color: rgba(255, 255, 255, 0.35);
+}
+
+.inspected-copy-btn.copied {
+  color: #6cdc86;
+  border-color: rgba(108, 220, 134, 0.5);
+  background: rgba(108, 220, 134, 0.12);
 }
 
 .inspected-lab {
