@@ -202,21 +202,28 @@
   min-width: 0;
 }
 
+.reference-name-row,
+.reference-hex-row {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  margin-bottom: 0.08rem;
+}
+
 .reference-name {
   color: #fff;
   font-weight: 600;
   font-size: 0.85rem;
-  margin-bottom: 0.08rem;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  min-width: 0;
 }
 
 .reference-hex {
   color: #ffd700;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 0.78rem;
-  margin-bottom: 0.08rem;
 }
 
 .reference-lab {

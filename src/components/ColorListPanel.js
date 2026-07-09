@@ -2,6 +2,7 @@ import { useRef, useState, useEffect } from 'react';
 import { DISPLAY_INCREMENT } from '../ColorVisualization';
 import { deltaE2000 } from '../colorUtils';
 import { LabDisplay } from './LabDisplay';
+import { CopyButton } from './CopyButton';
 import { QuizTab } from './QuizTab';
 import { BuildTab } from './BuildTab';
 import packageJson from '../../package.json';
@@ -250,8 +251,14 @@ export function ColorListPanel({
                   style={{ backgroundColor: selectedColor.hex }}
                 />
                 <div className="reference-info">
-                  <div className="reference-name">{selectedColor.name}</div>
-                  <div className="reference-hex">{selectedColor.hex.toUpperCase()}</div>
+                  <div className="reference-name-row">
+                    <div className="reference-name">{selectedColor.name}</div>
+                    <CopyButton text={selectedColor.name} label="name" />
+                  </div>
+                  <div className="reference-hex-row">
+                    <div className="reference-hex">{selectedColor.hex.toUpperCase()}</div>
+                    <CopyButton text={selectedColor.hex.toUpperCase()} label="hex code" />
+                  </div>
                   <div className="reference-lab">
                     <LabDisplay l={selectedColor.l} a={selectedColor.a} b={selectedColor.b} />
                   </div>
