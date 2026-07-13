@@ -9,6 +9,9 @@ import { InspectedPanel } from './components/InspectedPanel';
 export const INITIAL_DISPLAY_LIMIT = 100;
 export const DISPLAY_INCREMENT = 100;
 const SCROLL_LOAD_THRESHOLD_PX = 250;
+const MARKER_RADIUS = 1.5;
+const INITIAL_CAMERA_POSITION = { x: 100, y: 80, z: 100 };
+const INITIAL_ORBIT_TARGET = { x: 0, y: 50, z: 0 };
 
 function createLabelSprite(name, hex) {
   const res = 2;
@@ -114,15 +117,17 @@ export function ColorVisualization() {
     const container = containerRef.current;
     if (!container) return;
 
-    orbitTargetRef.current = new THREE.Vector3(0, 50, 0);
+    orbitTargetRef.current = new THREE.Vector3(
+      INITIAL_ORBIT_TARGET.x, INITIAL_ORBIT_TARGET.y, INITIAL_ORBIT_TARGET.z
+    );
 
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0x1a1a1a);
     sceneRef.current = scene;
 
     const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 10000);
-    camera.position.set(100, 80, 100);
-    camera.lookAt(0, 50, 0);
+    camera.position.set(INITIAL_CAMERA_POSITION.x, INITIAL_CAMERA_POSITION.y, INITIAL_CAMERA_POSITION.z);
+    camera.lookAt(INITIAL_ORBIT_TARGET.x, INITIAL_ORBIT_TARGET.y, INITIAL_ORBIT_TARGET.z);
     cameraRef.current = camera;
 
     const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -344,7 +349,7 @@ export function ColorVisualization() {
   const addHighlightMarker = (x, y, z) => {
     const scene = sceneRef.current;
     if (highlightMarkerRef.current) scene.remove(highlightMarkerRef.current);
-    const geometry = new THREE.SphereGeometry(3, 32, 32);
+    const geometry = new THREE.SphereGeometry(MARKER_RADIUS, 32, 32);
     const material = new THREE.MeshBasicMaterial({ color: 0xffff00, wireframe: true, transparent: true, opacity: 0.7 });
     const marker = new THREE.Mesh(geometry, material);
     marker.position.set(x, y, z);
@@ -438,12 +443,19 @@ export function ColorVisualization() {
   const updateActiveList = (updater) =>
     setColorLists(prev => prev.map(l => l.id === activeListId ? { ...l, colors: updater(l.colors) } : l));
 
-  const handleAddToList = (color) => {
-    updateActiveList(prev => prev.some(c => c.hex === color.hex) ? prev : [...prev, color]);
+  const handleAddToList = (color, listId) => {
+    const targetId = listId ?? activeListId;
+    setColorLists(prev => prev.map(l => {
+      if (l.id !== targetId) return l;
+      return l.colors.some(c => c.hex === color.hex) ? l : { ...l, colors: [...l.colors, color] };
+    }));
   };
 
-  const handleRemoveFromList = (color) => {
-    updateActiveList(prev => prev.filter(c => c.hex !== color.hex));
+  const handleRemoveFromList = (color, listId) => {
+    const targetId = listId ?? activeListId;
+    setColorLists(prev => prev.map(l =>
+      l.id === targetId ? { ...l, colors: l.colors.filter(c => c.hex !== color.hex) } : l
+    ));
   };
 
   const handleReorderList = (from, to) => {
@@ -484,6 +496,15 @@ export function ColorVisualization() {
 
   const handleRenameList = (id, name) => {
     setColorLists(prev => prev.map(l => l.id === id ? { ...l, name } : l));
+  };
+
+  const handleResetCamera = () => {
+    const camera = cameraRef.current;
+    if (!camera) return;
+    orbitTargetRef.current.set(INITIAL_ORBIT_TARGET.x, INITIAL_ORBIT_TARGET.y, INITIAL_ORBIT_TARGET.z);
+    camera.position.set(INITIAL_CAMERA_POSITION.x, INITIAL_CAMERA_POSITION.y, INITIAL_CAMERA_POSITION.z);
+    camera.lookAt(INITIAL_ORBIT_TARGET.x, INITIAL_ORBIT_TARGET.y, INITIAL_ORBIT_TARGET.z);
+    needsRenderRef.current = true;
   };
 
   const handleClearReference = () => {
@@ -747,7 +768,7 @@ export function ColorVisualization() {
     }
     if (inspectedColor) {
       const { x, y, z } = getColorPlotPos(inspectedColor, plotMode);
-      const geometry = new THREE.SphereGeometry(3, 32, 32);
+      const geometry = new THREE.SphereGeometry(MARKER_RADIUS, 32, 32);
       const material = new THREE.MeshBasicMaterial({ color: 0x00ffff, wireframe: true, transparent: true, opacity: 0.7 });
       const marker = new THREE.Mesh(geometry, material);
       marker.position.set(x, y, z);
@@ -880,6 +901,7 @@ export function ColorVisualization() {
           setInspectedColor={setInspectedColor}
           setActiveListId={setActiveListId}
           onClearReference={handleClearReference}
+          onResetCamera={handleResetCamera}
           onRemoveFromList={handleRemoveFromList}
           onReorderList={handleReorderList}
           onSortListByReference={handleSortListByReference}
@@ -910,10 +932,11 @@ export function ColorVisualization() {
           selectedColor={selectedColor}
           plotMode={plotMode}
           hidePercentage={hidePercentage}
-          listColors={listColors}
+          colorLists={colorLists}
           onClose={() => setInspectedColor(null)}
           onSetReference={() => { handleColorSelect(inspectedColor); setInspectedColor(null); }}
           onAddToList={handleAddToList}
+          onRemoveFromList={handleRemoveFromList}
         />
       )}
 

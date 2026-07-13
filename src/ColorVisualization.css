@@ -122,6 +122,23 @@
   box-shadow: 0 8px 20px rgba(0, 0, 0, 0.5);
 }
 
+.settings-reset-camera {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: #ddd;
+  padding: 0.4rem 0.6rem;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.settings-reset-camera:hover {
+  background: rgba(255, 215, 0, 0.12);
+  border-color: rgba(255, 215, 0, 0.4);
+  color: #ffd700;
+}
+
 .settings-version {
   text-align: right;
   color: #666;
@@ -331,9 +348,50 @@
   gap: 0.5rem;
 }
 
+.threshold-header-left {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+.threshold-collapse-toggle {
+  flex-shrink: 0;
+  background: transparent;
+  border: none;
+  color: #999;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.65rem;
+  line-height: 1;
+  cursor: pointer;
+  transition: transform 0.15s, color 0.15s;
+}
+
+.threshold-collapse-toggle.open {
+  transform: rotate(90deg);
+}
+
+.threshold-collapse-toggle:hover {
+  color: #fff;
+}
+
 .threshold-label {
   color: #ccc;
   font-size: 0.8rem;
+}
+
+.threshold-collapsed-value {
+  color: #ffd700;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.8rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
 }
 
 .filter-input-compact {
@@ -409,14 +467,6 @@
   user-select: none;
 }
 
-.option-check input[type="checkbox"] {
-  width: 14px;
-  height: 14px;
-  margin: 0;
-  cursor: pointer;
-  accent-color: #ffd700;
-}
-
 .option-check.disabled {
   opacity: 0.5;
   cursor: not-allowed;
@@ -424,6 +474,47 @@
 
 .option-check.disabled input[type="checkbox"] {
   cursor: not-allowed;
+}
+
+/* Dark-themed checkbox, shared by all checkboxes in the app */
+.option-check input[type="checkbox"],
+.list-modal-row input[type="checkbox"] {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  flex-shrink: 0;
+  border-radius: 4px;
+  border: 1.5px solid rgba(255, 255, 255, 0.28);
+  background: rgba(255, 255, 255, 0.04);
+  cursor: pointer;
+  position: relative;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.option-check input[type="checkbox"]:hover,
+.list-modal-row input[type="checkbox"]:hover {
+  border-color: rgba(255, 255, 255, 0.5);
+}
+
+.option-check input[type="checkbox"]:checked,
+.list-modal-row input[type="checkbox"]:checked {
+  background: #ffd700;
+  border-color: #ffd700;
+}
+
+.option-check input[type="checkbox"]:checked::after,
+.list-modal-row input[type="checkbox"]:checked::after {
+  content: '';
+  position: absolute;
+  left: 4px;
+  top: 1px;
+  width: 4px;
+  height: 8px;
+  border: solid #1a1a1a;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
 }
 
 .sort-toggle {
@@ -491,27 +582,58 @@
   font-size: 0.75rem;
 }
 
+/* .color-list is the scrolling element (fixed height, so its own
+   scrollbar renders at its outer edge — to the right of everything
+   inside, including the reference band). .color-list-row is an
+   intrinsically-sized (auto height) wrapper: because its height isn't
+   externally constrained, align-items: stretch correctly stretches the
+   band to match the items column's full (possibly overflowing, taller
+   than the visible viewport) content height rather than just the
+   visible viewport height. */
 .color-list {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
   /* Only this region scrolls — header, reference, filters stay pinned. */
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding-right: 2px;
-  transition: border-left-color 0.3s ease;
+  padding-right: 0;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.25) transparent;
 }
 
-.color-list.has-reference .color-item {
-  border-left: none;
-  border-radius: 0 4px 4px 0;
+.color-list::-webkit-scrollbar {
+  width: 6px;
 }
 
-.color-list.has-reference .color-swatch {
-  margin-left: 0;
+.color-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.color-list::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.25);
+  border-radius: 3px;
+}
+
+.color-list-row {
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  min-height: 100%;
+}
+
+.color-list-items {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.reference-band {
+  flex-shrink: 0;
+  width: 20px;
   border-radius: 0 4px 4px 0;
+  transition: background-color 0.3s ease;
 }
 
 .reference-color,
@@ -531,53 +653,68 @@
   gap: 0;
 }
 
+/* Each row's background IS the color itself, so it can be compared
+   directly against the reference swatch with nothing (no border, no
+   ring) touching the swatch to bias color perception. Selection/match
+   state is shown on the opaque text chips instead — see .color-info
+   and .color-similarity below. */
 .color-item {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  padding: 0.4rem 0.5rem 0.4rem 0;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 0.45rem 0.55rem;
+  border: none;
   border-radius: 4px;
   cursor: pointer;
-  transition: background 0.15s, border-color 0.15s;
+  transition: filter 0.15s;
   box-sizing: border-box;
   contain: content;
 }
 
 .color-item:hover {
-  background: rgba(255, 255, 255, 0.1);
-  border-color: rgba(255, 255, 255, 0.2);
+  filter: brightness(1.12);
 }
 
-.color-item.selected {
-  background: rgba(255, 255, 0, 0.15);
-  border-color: rgba(255, 255, 0, 0.5);
-}
-
-.color-swatch {
-  width: 28px;
-  height: 28px;
-  border-radius: 4px;
-  flex-shrink: 0;
-  margin-left: -1px;
-  border: none !important;
-  box-shadow: none !important;
-  outline: none !important;
+/* Flush against the reference-color accent bar on the right — no gap
+   or rounded corner breaking the contact between them. */
+.color-list.has-reference .color-item {
+  border-radius: 4px 0 0 4px;
 }
 
 .color-info {
-  flex: 1;
+  flex: 0 1 auto;
+  max-width: 70%;
   min-width: 0;
   display: flex;
   flex-direction: column;
   justify-content: center;
-  line-height: 1.2;
+  line-height: 1.25;
+  background: rgba(0, 0, 0, 0.62);
+  border-radius: 4px;
+  padding: 0.22rem 0.5rem;
+  box-shadow: 0 0 0 0 transparent;
+  transition: box-shadow 0.15s;
+}
+
+/* Selection/match state lives on the opaque chips, never on the row
+   itself, so it can't bias the perceived hue of the swatch. Gold =
+   reference color, cyan = currently inspected color (matches the
+   inspect marker color in the 3D plot). Both can apply at once. */
+.color-item.selected .color-info {
+  box-shadow: 0 0 0 2px rgba(255, 224, 102, 0.85);
+}
+
+.color-item.inspected .color-info {
+  box-shadow: 0 0 0 2px rgba(0, 229, 255, 0.85);
+}
+
+.color-item.selected.inspected .color-info {
+  box-shadow: 0 0 0 2px rgba(255, 224, 102, 0.85), 0 0 0 4px rgba(0, 229, 255, 0.85);
 }
 
 .color-name {
   color: #fff;
-  font-weight: 500;
+  font-weight: 600;
   font-size: 0.8rem;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -585,7 +722,7 @@
 }
 
 .color-hex {
-  color: #888;
+  color: #ccc;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 0.7rem;
 }
@@ -593,6 +730,9 @@
 .color-lab {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 0.63rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .color-similarity {
@@ -601,29 +741,24 @@
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   flex-shrink: 0;
-  padding-left: 0.25rem;
+  margin-left: auto;
+  background: rgba(0, 0, 0, 0.62);
+  border-radius: 4px;
+  padding: 0.2rem 0.45rem;
+  box-shadow: 0 0 0 0 transparent;
+  transition: box-shadow 0.15s;
 }
 
-/* Highlight rows whose similarity meets the active threshold. */
-.color-item.within-threshold {
-  background: rgba(80, 220, 120, 0.12);
-  border-color: rgba(80, 220, 120, 0.5);
-  box-shadow: inset 2px 0 0 rgba(80, 220, 120, 0.85);
+/* Keep the badge clear of the reference-color accent bar on the right. */
+.color-list.has-reference .color-item .color-similarity {
+  margin-right: 0.5rem;
 }
 
-.color-item.within-threshold:hover {
-  background: rgba(80, 220, 120, 0.18);
-  border-color: rgba(80, 220, 120, 0.7);
-}
-
+/* Highlight rows whose similarity meets the active threshold — on the
+   badge itself, not the row, so the swatch stays untouched. */
 .color-item.within-threshold .color-similarity {
   color: #6cdc86;
-}
-
-.color-item.within-threshold.selected {
-  background: rgba(255, 255, 0, 0.18);
-  border-color: rgba(255, 255, 0, 0.6);
-  box-shadow: inset 2px 0 0 rgba(80, 220, 120, 0.85);
+  box-shadow: 0 0 0 2px rgba(108, 220, 134, 0.8);
 }
 
 .filter-row-bottom {
@@ -721,23 +856,24 @@
   color: #fff;
 }
 
+/* The body's background IS the inspected color, mirroring the color
+   list rows, with text sitting in an opaque chip for guaranteed
+   contrast. Inset like the rest of the panel (header/actions) rather
+   than bleeding to the card edges. */
 .inspected-body {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-}
-
-.inspected-swatch {
-  width: 34px;
-  height: 34px;
+  margin: 0.3rem 0 0.35rem;
+  padding: 0.5rem 0.55rem;
   border-radius: 4px;
-  border: 1px solid rgba(255, 255, 255, 0.25);
-  flex-shrink: 0;
 }
 
 .inspected-info {
-  flex: 1;
   min-width: 0;
+  max-width: 100%;
+  background: rgba(0, 0, 0, 0.65);
+  border-radius: 4px;
+  padding: 0.3rem 0.55rem;
 }
 
 .inspected-name-row,
@@ -790,14 +926,16 @@
   background: rgba(108, 220, 134, 0.12);
 }
 
-.inspected-lab {
-  font-size: 0.7rem;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-}
-
+.inspected-lab,
 .inspected-xyz {
   font-size: 0.7rem;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.inspected-xyz {
   color: #aaa;
 }
 
@@ -844,15 +982,228 @@
   transition: background 0.15s, color 0.15s;
 }
 
-.inspected-add-list:hover:not(:disabled) {
+.inspected-add-list:hover {
   background: rgba(100, 160, 255, 0.22);
   color: #fff;
 }
 
-.inspected-add-list.in-list,
-.inspected-add-list:disabled {
-  opacity: 0.5;
-  cursor: default;
+.inspected-in-lists {
+  margin-top: 0.35rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+
+.inspected-list-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  background: rgba(255, 215, 0, 0.1);
+  border: 1px solid rgba(255, 215, 0, 0.35);
+  color: #ffd700;
+  border-radius: 999px;
+  padding: 0.12rem 0.3rem 0.12rem 0.55rem;
+  font-size: 0.7rem;
+  max-width: 100%;
+}
+
+.inspected-list-chip-remove {
+  background: transparent;
+  border: none;
+  color: #ffd700;
+  opacity: 0.7;
+  width: 14px;
+  height: 14px;
+  padding: 0;
+  line-height: 1;
+  font-size: 0.75rem;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.inspected-list-chip-remove:hover {
+  opacity: 1;
+  color: #fff;
+}
+
+/* "Add to List" membership modal */
+.list-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 200;
+}
+
+.list-modal {
+  background: rgba(15, 15, 15, 0.97);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  width: min(320px, 90vw);
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.5);
+}
+
+.list-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.65rem 0.75rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.list-modal-title {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  color: #fff;
+  font-size: 0.85rem;
+  font-weight: 600;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.list-modal-swatch {
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  flex-shrink: 0;
+}
+
+.list-modal-close {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: #ccc;
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.list-modal-close:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+
+.list-modal-body {
+  overflow-y: auto;
+  padding: 0.65rem 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.list-modal-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0.5rem;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.list-modal-row:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.list-modal-row.checked {
+  background: rgba(255, 215, 0, 0.1);
+  border-color: rgba(255, 215, 0, 0.4);
+}
+
+.list-modal-name {
+  flex: 1;
+  min-width: 0;
+  color: #eee;
+  font-size: 0.85rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.list-modal-footer {
+  padding: 0.6rem 0.75rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  display: flex;
+  justify-content: flex-end;
+}
+
+.list-modal-done {
+  background: rgba(255, 215, 0, 0.12);
+  border: 1px solid rgba(255, 215, 0, 0.4);
+  color: #ffd700;
+  padding: 0.35rem 0.9rem;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.list-modal-done:hover {
+  background: rgba(255, 215, 0, 0.22);
+  color: #fff;
+}
+
+.confirm-modal-body {
+  padding: 0.75rem;
+  color: #ccc;
+  font-size: 0.85rem;
+  line-height: 1.4;
+}
+
+.confirm-modal-actions {
+  padding: 0.6rem 0.75rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+.confirm-modal-cancel {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: #ccc;
+  padding: 0.35rem 0.9rem;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.confirm-modal-cancel:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+
+.confirm-modal-danger {
+  background: rgba(255, 90, 90, 0.12);
+  border: 1px solid rgba(255, 90, 90, 0.45);
+  color: #ff7a7a;
+  padding: 0.35rem 0.9rem;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.confirm-modal-danger:hover {
+  background: rgba(255, 90, 90, 0.25);
+  color: #fff;
 }
 
 /* Drag-and-drop handle and states */
@@ -863,27 +1214,38 @@
   justify-content: center;
   width: 1.1rem;
   height: 1.4rem;
-  color: #555;
+  color: #ccc;
+  background: rgba(0, 0, 0, 0.4);
   font-size: 1rem;
   cursor: grab;
   touch-action: none;
   user-select: none;
   border-radius: 3px;
-  transition: color 0.15s;
+  transition: color 0.15s, background 0.15s;
 }
 
 .drag-handle:hover {
-  color: #aaa;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.55);
 }
 
 .drag-handle:active {
   cursor: grabbing;
-  color: #ddd;
+  color: #fff;
+}
+
+.drag-handle.disabled {
+  cursor: default;
+  opacity: 0.4;
+}
+
+.drag-handle.disabled:hover {
+  color: #ccc;
+  background: rgba(0, 0, 0, 0.4);
 }
 
 .color-item.dragging {
   opacity: 0.35;
-  border-style: dashed;
 }
 
 .color-item.drag-over-top {
@@ -1071,9 +1433,9 @@
 
 .list-remove {
   flex-shrink: 0;
-  background: transparent;
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  color: #888;
+  background: rgba(0, 0, 0, 0.45);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: #eee;
   width: 1.4rem;
   height: 1.4rem;
   border-radius: 3px;
@@ -1088,9 +1450,9 @@
 }
 
 .list-remove:hover {
-  background: rgba(255, 80, 80, 0.15);
-  border-color: rgba(255, 80, 80, 0.5);
-  color: #ff6060;
+  background: rgba(255, 80, 80, 0.5);
+  border-color: rgba(255, 80, 80, 0.7);
+  color: #fff;
 }
 
 /* Count badge on the List Plot tab */

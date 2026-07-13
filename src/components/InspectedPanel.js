@@ -1,17 +1,23 @@
+import { useState } from 'react';
 import { deltaE2000, hexToXyz } from '../colorUtils';
 import { LabDisplay } from './LabDisplay';
+import { XyzDisplay } from './XyzDisplay';
 import { CopyButton } from './CopyButton';
+import { ListMembershipModal } from './ListMembershipModal';
 
 export function InspectedPanel({
   inspectedColor,
   selectedColor,
   plotMode,
   hidePercentage,
-  listColors,
+  colorLists,
   onClose,
   onSetReference,
   onAddToList,
+  onRemoveFromList,
 }) {
+  const [listModalOpen, setListModalOpen] = useState(false);
+
   const inspectedSimilarity = selectedColor
     ? Math.max(0, 100 - deltaE2000(
         selectedColor.l, selectedColor.a, selectedColor.b,
@@ -24,7 +30,12 @@ export function InspectedPanel({
     selectedColor.name === inspectedColor.name &&
     selectedColor.hex === inspectedColor.hex;
 
-  const inList = listColors.some(c => c.hex === inspectedColor.hex);
+  const listsContaining = colorLists.filter(l => l.colors.some(c => c.hex === inspectedColor.hex));
+
+  const handleToggleList = (listId, isIn) => {
+    if (isIn) onRemoveFromList(inspectedColor, listId);
+    else onAddToList(inspectedColor, listId);
+  };
 
   return (
     <div className="inspected-panel">
@@ -40,11 +51,7 @@ export function InspectedPanel({
           ×
         </button>
       </div>
-      <div className="inspected-body">
-        <div
-          className="inspected-swatch"
-          style={{ backgroundColor: inspectedColor.hex }}
-        />
+      <div className="inspected-body" style={{ backgroundColor: inspectedColor.hex }}>
         <div className="inspected-info">
           <div className="inspected-name-row">
             <div className="inspected-name">{inspectedColor.name}</div>
@@ -54,15 +61,16 @@ export function InspectedPanel({
             <div className="inspected-hex">{inspectedColor.hex.toUpperCase()}</div>
             <CopyButton text={inspectedColor.hex.toUpperCase()} label="hex code" />
           </div>
-          <div className="inspected-lab">
-            <LabDisplay l={inspectedColor.l} a={inspectedColor.a} b={inspectedColor.b} />
-          </div>
-          {plotMode === 'xyz' && (
+          {plotMode === 'xyz' ? (
             <div className="inspected-xyz">
               {(() => {
                 const { x, y, z } = hexToXyz(inspectedColor.hex.replace('#', ''));
-                return `X:${x.toFixed(4)} Y:${y.toFixed(4)} Z:${z.toFixed(4)}`;
+                return <XyzDisplay x={x} y={y} z={z} />;
               })()}
+            </div>
+          ) : (
+            <div className="inspected-lab">
+              <LabDisplay l={inspectedColor.l} a={inspectedColor.a} b={inspectedColor.b} />
             </div>
           )}
           {!hidePercentage && inspectedSimilarity !== null && (
@@ -84,13 +92,38 @@ export function InspectedPanel({
         )}
         <button
           type="button"
-          className={`inspected-add-list ${inList ? 'in-list' : ''}`}
-          onClick={() => onAddToList(inspectedColor)}
-          disabled={inList}
+          className="inspected-add-list"
+          onClick={() => setListModalOpen(true)}
         >
-          {inList ? 'In List' : 'Add to List'}
+          Add to List
         </button>
       </div>
+      {listsContaining.length > 0 && (
+        <div className="inspected-in-lists">
+          {listsContaining.map(list => (
+            <span key={list.id} className="inspected-list-chip">
+              {list.name}
+              <button
+                type="button"
+                className="inspected-list-chip-remove"
+                onClick={() => onRemoveFromList(inspectedColor, list.id)}
+                title={`Remove from ${list.name}`}
+                aria-label={`Remove from ${list.name}`}
+              >
+                ×
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+      {listModalOpen && (
+        <ListMembershipModal
+          color={inspectedColor}
+          colorLists={colorLists}
+          onToggle={handleToggleList}
+          onClose={() => setListModalOpen(false)}
+        />
+      )}
     </div>
   );
 }

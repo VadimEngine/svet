@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { deltaE2000, hexToLab, hexToXyz, labToHex, xyzToHex } from '../colorUtils';
 import { LabDisplay } from './LabDisplay';
+import { XyzDisplay } from './XyzDisplay';
 
 const NEAREST_COUNT = 15;
 const DEFAULT_HEX = '808080';
@@ -124,14 +125,19 @@ export function BuildTab({ allColors, plotMode, setInspectedColor }) {
             <div
               key={`${color.name}-${color.hex}-${idx}`}
               className="color-item"
+              style={{ backgroundColor: color.hex }}
               onClick={() => setInspectedColor(color)}
             >
-              <div className="color-swatch" style={{ backgroundColor: color.hex }} />
               <div className="color-info">
                 <div className="color-name">{color.name}</div>
                 <div className="color-hex">{color.hex.toUpperCase()}</div>
                 <div className="color-lab">
-                  <LabDisplay l={color.l} a={color.a} b={color.b} />
+                  {plotMode === 'xyz'
+                    ? (() => {
+                        const { x, y, z } = hexToXyz(color.hex.replace('#', ''));
+                        return <XyzDisplay x={x} y={y} z={z} />;
+                      })()
+                    : <LabDisplay l={color.l} a={color.a} b={color.b} />}
                 </div>
               </div>
               <div className="color-similarity">{color.similarity.toFixed(2)}%</div>

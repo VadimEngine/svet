@@ -1,8 +1,10 @@
 import { useRef, useState, useEffect } from 'react';
 import { DISPLAY_INCREMENT } from '../ColorVisualization';
-import { deltaE2000 } from '../colorUtils';
+import { deltaE2000, hexToXyz } from '../colorUtils';
 import { LabDisplay } from './LabDisplay';
+import { XyzDisplay } from './XyzDisplay';
 import { CopyButton } from './CopyButton';
+import { ConfirmModal } from './ConfirmModal';
 import { QuizTab } from './QuizTab';
 import { BuildTab } from './BuildTab';
 import packageJson from '../../package.json';
@@ -50,6 +52,7 @@ export function ColorListPanel({
   setActiveListId,
   // Callbacks
   onClearReference,
+  onResetCamera,
   onRemoveFromList,
   onReorderList,
   onSortListByReference,
@@ -63,6 +66,14 @@ export function ColorListPanel({
 }) {
   const thresholdValueNum = parseFloat(similarityThreshold);
   const hasActiveThreshold = !Number.isNaN(thresholdValueNum) && !!selectedColor;
+
+  const renderColorValues = (color) => {
+    if (plotMode === 'xyz') {
+      const { x, y, z } = hexToXyz(color.hex.replace('#', ''));
+      return <XyzDisplay x={x} y={y} z={z} />;
+    }
+    return <LabDisplay l={color.l} a={color.a} b={color.b} />;
+  };
 
   const handleExportList = () => {
     const list = colorLists.find(l => l.id === activeListId);
@@ -82,6 +93,9 @@ export function ColorListPanel({
   const [dragIndex, setDragIndex] = useState(null);
   const [overIndex, setOverIndex] = useState(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [listSearchTerm, setListSearchTerm] = useState('');
+  const [confirmModal, setConfirmModal] = useState(null);
+  const [thresholdSectionOpen, setThresholdSectionOpen] = useState(true);
   const hamburgerRef = useRef(null);
   const settingsDropdownRef = useRef(null);
 
@@ -95,6 +109,19 @@ export function ColorListPanel({
     document.addEventListener('mousedown', handleClick);
     return () => document.removeEventListener('mousedown', handleClick);
   }, [settingsOpen]);
+
+  useEffect(() => {
+    setListSearchTerm('');
+  }, [activeListId]);
+
+  const normalizedListSearch = listSearchTerm.trim().toLowerCase();
+  const isListFiltered = normalizedListSearch.length > 0;
+  const filteredListColors = isListFiltered
+    ? listColors.filter(c =>
+        c.name.toLowerCase().includes(normalizedListSearch) ||
+        c.hex.toLowerCase().replace('#', '').includes(normalizedListSearch.replace('#', ''))
+      )
+    : listColors;
 
   const handleDragStart = (e, index) => {
     e.preventDefault();
@@ -235,6 +262,15 @@ export function ColorListPanel({
                 <span>Hide percentage</span>
               </label>
             </div>
+            <div className="setting-row">
+              <button
+                type="button"
+                className="settings-reset-camera"
+                onClick={onResetCamera}
+              >
+                Reset Camera
+              </button>
+            </div>
             <div className="settings-version">v{packageJson.version}</div>
           </div>
         )}
@@ -322,64 +358,85 @@ export function ColorListPanel({
             </div>
             <div className="threshold-section">
               <div className="threshold-header">
-                <label className="threshold-label" htmlFor="similarity-threshold-number">
-                  Min similarity %
-                </label>
+                <div className="threshold-header-left">
+                  <button
+                    type="button"
+                    className={`threshold-collapse-toggle${thresholdSectionOpen ? ' open' : ''}`}
+                    onClick={() => setThresholdSectionOpen(v => !v)}
+                    aria-expanded={thresholdSectionOpen}
+                    title={thresholdSectionOpen ? 'Collapse' : 'Expand'}
+                  >
+                    ▸
+                  </button>
+                  <label className="threshold-label" htmlFor="similarity-threshold-number">
+                    Min similarity %
+                  </label>
+                </div>
+                {thresholdSectionOpen ? (
+                  <input
+                    id="similarity-threshold-number"
+                    type="number"
+                    className="filter-input filter-input-compact"
+                    value={similarityThreshold}
+                    min="0"
+                    max="100"
+                    step="0.01"
+                    onChange={(e) => setSimilarityThreshold(e.target.value)}
+                    disabled={!selectedColor && !isHexSearch}
+                  />
+                ) : (
+                  hasActiveThreshold && (
+                    <span className="threshold-collapsed-value">{thresholdValueNum}%</span>
+                  )
+                )}
+              </div>
+              {thresholdSectionOpen && (
                 <input
-                  id="similarity-threshold-number"
-                  type="number"
-                  className="filter-input filter-input-compact"
-                  value={similarityThreshold}
+                  type="range"
+                  className="threshold-slider"
                   min="0"
                   max="100"
                   step="0.01"
+                  value={parseFloat(similarityThreshold) || 0}
                   onChange={(e) => setSimilarityThreshold(e.target.value)}
                   disabled={!selectedColor && !isHexSearch}
+                  aria-label="Min similarity percentage"
                 />
-              </div>
-              <input
-                type="range"
-                className="threshold-slider"
-                min="0"
-                max="100"
-                step="0.01"
-                value={parseFloat(similarityThreshold) || 0}
-                onChange={(e) => setSimilarityThreshold(e.target.value)}
-                disabled={!selectedColor && !isHexSearch}
-                aria-label="Min similarity percentage"
-              />
+              )}
             </div>
 
-            <div className="filter-options">
-              <label
-                className={`option-check ${!selectedColor && !isHexSearch ? 'disabled' : ''}`}
-                title="Apply the similarity threshold to the list of colors below"
-              >
-                <input
-                  type="checkbox"
-                  checked={filterByThreshold}
-                  onChange={(e) => setFilterByThreshold(e.target.checked)}
-                  disabled={!selectedColor && !isHexSearch}
-                />
-                <span>Filter colors</span>
-              </label>
-              <label
-                className={`option-check ${!selectedColor ? 'disabled' : ''}`}
-                title={
-                  selectedColor
-                    ? "Hide points in the 3D plot that don't meet the threshold"
-                    : 'Select a reference color to enable filtering'
-                }
-              >
-                <input
-                  type="checkbox"
-                  checked={hideOutliers}
-                  onChange={(e) => setHideOutliers(e.target.checked)}
-                  disabled={!selectedColor}
-                />
-                <span>Hide Plot outliers</span>
-              </label>
-            </div>
+            {thresholdSectionOpen && (
+              <div className="filter-options">
+                <label
+                  className={`option-check ${!selectedColor && !isHexSearch ? 'disabled' : ''}`}
+                  title="Apply the similarity threshold to the list of colors below"
+                >
+                  <input
+                    type="checkbox"
+                    checked={filterByThreshold}
+                    onChange={(e) => setFilterByThreshold(e.target.checked)}
+                    disabled={!selectedColor && !isHexSearch}
+                  />
+                  <span>Filter colors</span>
+                </label>
+                <label
+                  className={`option-check ${!selectedColor ? 'disabled' : ''}`}
+                  title={
+                    selectedColor
+                      ? "Hide points in the 3D plot that don't meet the threshold"
+                      : 'Select a reference color to enable filtering'
+                  }
+                >
+                  <input
+                    type="checkbox"
+                    checked={hideOutliers}
+                    onChange={(e) => setHideOutliers(e.target.checked)}
+                    disabled={!selectedColor}
+                  />
+                  <span>Hide Plot outliers</span>
+                </label>
+              </div>
+            )}
             <div className="filter-row-bottom">
               <button
                 type="button"
@@ -401,57 +458,65 @@ export function ColorListPanel({
             className={`color-list${selectedColor ? ' has-reference' : ''}`}
             ref={listScrollRef}
             onScroll={onListScroll}
-            style={selectedColor ? { borderLeft: `6px solid ${selectedColor.hex}` } : {}}
           >
-            {filteredColors.length === 0 ? (
-              <div className="color-empty">No colors match the current filters.</div>
-            ) : (
-              <>
-                {visibleColors.map((color, idx) => {
-                  const isReference = selectedColor?.name === color.name && selectedColor?.hex === color.hex;
-                  const withinThreshold =
-                    hasActiveThreshold &&
-                    color.similarity !== undefined &&
-                    color.similarity >= thresholdValueNum;
-                  const classes = [
-                    'color-item',
-                    isReference ? 'selected' : '',
-                    withinThreshold ? 'within-threshold' : '',
-                  ].filter(Boolean).join(' ');
-                  return (
-                    <div
-                      key={`${color.name}-${color.hex}-${idx}`}
-                      className={classes}
-                      onClick={() => setInspectedColor(color)}
-                    >
-                      <div className="color-swatch" style={{ backgroundColor: color.hex }} />
-                      <div className="color-info">
-                        <div className="color-name">{color.name}</div>
-                        <div className="color-hex">{color.hex.toUpperCase()}</div>
-                        <div className="color-lab">
-                          <LabDisplay l={color.l} a={color.a} b={color.b} />
+            <div className="color-list-row">
+              <div className="color-list-items">
+                {filteredColors.length === 0 ? (
+                  <div className="color-empty">No colors match the current filters.</div>
+                ) : (
+                  <>
+                    {visibleColors.map((color, idx) => {
+                      const isReference = selectedColor?.name === color.name && selectedColor?.hex === color.hex;
+                      const isInspected = inspectedColor?.name === color.name && inspectedColor?.hex === color.hex;
+                      const withinThreshold =
+                        hasActiveThreshold &&
+                        color.similarity !== undefined &&
+                        color.similarity >= thresholdValueNum;
+                      const classes = [
+                        'color-item',
+                        isReference ? 'selected' : '',
+                        isInspected ? 'inspected' : '',
+                        withinThreshold ? 'within-threshold' : '',
+                      ].filter(Boolean).join(' ');
+                      return (
+                        <div
+                          key={`${color.name}-${color.hex}-${idx}`}
+                          className={classes}
+                          style={{ backgroundColor: color.hex }}
+                          onClick={() => setInspectedColor(color)}
+                        >
+                          <div className="color-info">
+                            <div className="color-name">{color.name}</div>
+                            <div className="color-hex">{color.hex.toUpperCase()}</div>
+                            <div className="color-lab">
+                              {renderColorValues(color)}
+                            </div>
+                          </div>
+                          {!hidePercentage && (selectedColor || isHexSearch || isRangeSearch) && color.similarity !== undefined && (
+                            <div className="color-similarity">
+                              {color.similarity.toFixed(2)}%
+                            </div>
+                          )}
                         </div>
-                      </div>
-                      {!hidePercentage && (selectedColor || isHexSearch || isRangeSearch) && color.similarity !== undefined && (
-                        <div className="color-similarity">
-                          {color.similarity.toFixed(2)}%
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-                {hiddenCount > 0 && (
-                  <button
-                    type="button"
-                    className="load-more"
-                    onClick={() => setDisplayLimit(d => d + DISPLAY_INCREMENT)}
-                  >
-                    Show {Math.min(DISPLAY_INCREMENT, hiddenCount)} more
-                    <span className="load-more-remaining"> ({hiddenCount} remaining)</span>
-                  </button>
+                      );
+                    })}
+                    {hiddenCount > 0 && (
+                      <button
+                        type="button"
+                        className="load-more"
+                        onClick={() => setDisplayLimit(d => d + DISPLAY_INCREMENT)}
+                      >
+                        Show {Math.min(DISPLAY_INCREMENT, hiddenCount)} more
+                        <span className="load-more-remaining"> ({hiddenCount} remaining)</span>
+                      </button>
+                    )}
+                  </>
                 )}
-              </>
-            )}
+              </div>
+              {selectedColor && (
+                <div className="reference-band" style={{ backgroundColor: selectedColor.hex }} />
+              )}
+            </div>
           </div>
         </div>
       )}
@@ -496,13 +561,45 @@ export function ColorListPanel({
               <button
                 type="button"
                 className="list-delete-btn"
-                onClick={() => onDeleteList(activeListId)}
+                onClick={() => {
+                  const list = colorLists.find(l => l.id === activeListId);
+                  setConfirmModal({
+                    title: 'Delete list?',
+                    message: `Delete "${list?.name ?? 'this list'}" and all ${list?.colors.length ?? 0} colors in it? This can't be undone.`,
+                    confirmLabel: 'Delete',
+                    onConfirm: () => onDeleteList(activeListId),
+                  });
+                }}
                 title="Delete this list"
               >
                 Delete
               </button>
             )}
           </div>
+
+          {/* Search within this list */}
+          {listColors.length > 0 && (
+            <div className="search-wrapper">
+              <input
+                type="text"
+                className="filter-input"
+                placeholder="Search this list by name or hex"
+                value={listSearchTerm}
+                onChange={(e) => setListSearchTerm(e.target.value)}
+              />
+              {listSearchTerm && (
+                <button
+                  type="button"
+                  className="search-clear"
+                  onClick={() => setListSearchTerm('')}
+                  aria-label="Clear list search"
+                  title="Clear list search"
+                >
+                  ×
+                </button>
+              )}
+            </div>
+          )}
 
           {/* Plot / label / clear controls */}
           <div className="list-controls">
@@ -538,7 +635,19 @@ export function ColorListPanel({
                 <button type="button" className="list-export-btn" onClick={handleExportList}>
                   Export CSV
                 </button>
-                <button type="button" className="list-clear-all" onClick={onClearList}>
+                <button
+                  type="button"
+                  className="list-clear-all"
+                  onClick={() => {
+                    const list = colorLists.find(l => l.id === activeListId);
+                    setConfirmModal({
+                      title: 'Clear list?',
+                      message: `Remove all ${list?.colors.length ?? listColors.length} colors from "${list?.name ?? 'this list'}"? This can't be undone.`,
+                      confirmLabel: 'Clear',
+                      onConfirm: onClearList,
+                    });
+                  }}
+                >
                   Clear
                 </button>
               </>
@@ -550,9 +659,14 @@ export function ColorListPanel({
             <div className="color-empty">
               No colors — open a color and press "Add to List".
             </div>
+          ) : filteredListColors.length === 0 ? (
+            <div className="color-empty">
+              No colors in this list match "{listSearchTerm}".
+            </div>
           ) : (
             <div className="color-list">
-              {listColors.map((color, idx) => {
+              {filteredListColors.map((color) => {
+                const idx = listColors.indexOf(color);
                 const isDragging = dragIndex === idx;
                 const isOverTarget = overIndex === idx && dragIndex !== null && dragIndex !== idx;
                 const overTop = isOverTarget && dragIndex > idx;
@@ -568,22 +682,23 @@ export function ColorListPanel({
                   <div
                     key={`${color.hex}-${idx}`}
                     className={classes}
+                    style={{ backgroundColor: color.hex }}
                     data-list-index={idx}
                     onClick={() => setInspectedColor(color)}
                   >
                     <div
-                      className="drag-handle"
-                      onPointerDown={e => handleDragStart(e, idx)}
+                      className={`drag-handle${isListFiltered ? ' disabled' : ''}`}
+                      onPointerDown={isListFiltered ? undefined : e => handleDragStart(e, idx)}
                       onClick={e => e.stopPropagation()}
+                      title={isListFiltered ? 'Clear search to reorder' : undefined}
                     >
                       ⠿
                     </div>
-                    <div className="color-swatch" style={{ backgroundColor: color.hex }} />
                     <div className="color-info">
                       <div className="color-name">{color.name}</div>
                       <div className="color-hex">{color.hex.toUpperCase()}</div>
                       <div className="color-lab">
-                        <LabDisplay l={color.l} a={color.a} b={color.b} />
+                        {renderColorValues(color)}
                       </div>
                     </div>
                     {!hidePercentage && selectedColor && (
@@ -615,6 +730,16 @@ export function ColorListPanel({
       <div style={{ display: activeTab === 'build' ? 'flex' : 'none', flexDirection: 'column', flex: '1 1 auto', minHeight: 0 }}>
         <BuildTab allColors={allColors} plotMode={plotMode} setInspectedColor={setInspectedColor} />
       </div>
+
+      {confirmModal && (
+        <ConfirmModal
+          title={confirmModal.title}
+          message={confirmModal.message}
+          confirmLabel={confirmModal.confirmLabel}
+          onConfirm={() => { confirmModal.onConfirm(); setConfirmModal(null); }}
+          onCancel={() => setConfirmModal(null)}
+        />
+      )}
     </div>
   );
 }
