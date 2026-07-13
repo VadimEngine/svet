@@ -6,7 +6,7 @@ Live site: https://VadimEngine.github.io/svet
 
 
 <p>
-  <img src="docs/screenshots/ScreenShot1.png" alt="LAB plot with color list" width="45%">
+  <img src="docs/screenshots/Screenshot1.png" alt="LAB plot with color list" width="45%">
 </p>
 
 ## Development
