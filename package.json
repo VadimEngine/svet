@@ -1,7 +1,7 @@
 {
   "homepage": "https://VadimEngine.github.io/svet",
   "name": "svet",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "private": true,
   "dependencies": {
     "@capacitor/android": "^5.7.8",

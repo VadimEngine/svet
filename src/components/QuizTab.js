@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { deltaE2000, hexToLab } from '../colorUtils';
 import { LabDisplay } from './LabDisplay';
 
-export function QuizTab({ allColors }) {
+export function QuizTab({ allColors, setInspectedColor }) {
   const [targetColor, setTargetColor] = useState(null);
   const [guesses, setGuesses] = useState([]);
   const [threshold, setThreshold] = useState(90);
@@ -153,9 +153,18 @@ export function QuizTab({ allColors }) {
           <div className="quiz-target-label">{won ? 'You got it!' : 'Guess this color'}</div>
           <button className="quiz-reset-btn" onClick={pickNewColor} title="Pick a new color">↺ Reset</button>
         </div>
-        <div className="quiz-target-swatch" style={{ backgroundColor: targetColor.hex }} />
+        <div
+          className={`quiz-target-swatch${won ? ' inspectable' : ''}`}
+          style={{ backgroundColor: targetColor.hex }}
+          onClick={won ? () => setInspectedColor(targetColor) : undefined}
+          title={won ? 'Inspect this color' : undefined}
+        />
         {won && (
-          <div className="quiz-target-reveal">
+          <div
+            className="quiz-target-reveal inspectable"
+            onClick={() => setInspectedColor(targetColor)}
+            title="Inspect this color"
+          >
             <div className="quiz-target-name">{targetColor.name}</div>
             <div className="quiz-target-hex">{targetColor.hex.toUpperCase()}</div>
             <div className="quiz-target-lab">
@@ -217,16 +226,21 @@ export function QuizTab({ allColors }) {
               {suggestions.map((color, idx) => (
                 <div
                   key={color.hex + idx}
-                  className={`quiz-suggestion-item${activeSuggestionIdx === idx ? ' active' : ''}`}
+                  className={`color-item${activeSuggestionIdx === idx ? ' selected' : ''}`}
+                  style={{ backgroundColor: color.hex }}
                   onMouseDown={() => {
                     selectSuggestion(color);
                     submitGuess(color);
                   }}
                 >
-                  <div className="quiz-suggestion-swatch" style={{ backgroundColor: color.hex }} />
-                  <span className="quiz-suggestion-name">{color.name}</span>
-                  <span className="quiz-suggestion-hex">{color.hex.toUpperCase()}</span>
-                  {color.isHexMatch && <span className="quiz-suggestion-badge">≈ hex</span>}
+                  <div className="color-info">
+                    <div className="color-name">{color.name}</div>
+                    <div className="color-hex">{color.hex.toUpperCase()}</div>
+                    <div className="color-lab">
+                      <LabDisplay l={color.l} a={color.a} b={color.b} />
+                    </div>
+                  </div>
+                  {color.isHexMatch && <div className="color-similarity">≈ hex</div>}
                 </div>
               ))}
             </div>
@@ -241,13 +255,20 @@ export function QuizTab({ allColors }) {
           </div>
           <div className="quiz-guesses-list">
             {guesses.map((g, idx) => (
-              <div key={idx} className={`quiz-guess-item${g.isWin ? ' win' : ''}`}>
-                <div className="quiz-guess-swatch" style={{ backgroundColor: g.color.hex }} />
-                <div className="quiz-guess-info">
-                  <div className="quiz-guess-name">{g.color.name}</div>
-                  <div className="quiz-guess-hex">{g.color.hex.toUpperCase()}</div>
+              <div
+                key={idx}
+                className={`color-item${g.isWin ? ' within-threshold' : ''}`}
+                style={{ backgroundColor: g.color.hex }}
+                onClick={() => setInspectedColor(g.color)}
+              >
+                <div className="color-info">
+                  <div className="color-name">{g.color.name}</div>
+                  <div className="color-hex">{g.color.hex.toUpperCase()}</div>
+                  <div className="color-lab">
+                    <LabDisplay l={g.color.l} a={g.color.a} b={g.color.b} />
+                  </div>
                 </div>
-                <div className={`quiz-guess-pct${g.isWin ? ' win' : ''}`}>
+                <div className="color-similarity">
                   {g.similarity.toFixed(1)}%
                   {g.isWin && <span className="quiz-win-badge">✓</span>}
                 </div>

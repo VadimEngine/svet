@@ -664,67 +664,74 @@ export function ColorListPanel({
               No colors in this list match "{listSearchTerm}".
             </div>
           ) : (
-            <div className="color-list">
-              {filteredListColors.map((color) => {
-                const idx = listColors.indexOf(color);
-                const isDragging = dragIndex === idx;
-                const isOverTarget = overIndex === idx && dragIndex !== null && dragIndex !== idx;
-                const overTop = isOverTarget && dragIndex > idx;
-                const overBottom = isOverTarget && dragIndex < idx;
-                const classes = [
-                  'color-item',
-                  inspectedColor?.hex === color.hex ? 'selected' : '',
-                  isDragging ? 'dragging' : '',
-                  overTop ? 'drag-over-top' : '',
-                  overBottom ? 'drag-over-bottom' : '',
-                ].filter(Boolean).join(' ');
-                return (
-                  <div
-                    key={`${color.hex}-${idx}`}
-                    className={classes}
-                    style={{ backgroundColor: color.hex }}
-                    data-list-index={idx}
-                    onClick={() => setInspectedColor(color)}
-                  >
-                    <div
-                      className={`drag-handle${isListFiltered ? ' disabled' : ''}`}
-                      onPointerDown={isListFiltered ? undefined : e => handleDragStart(e, idx)}
-                      onClick={e => e.stopPropagation()}
-                      title={isListFiltered ? 'Clear search to reorder' : undefined}
-                    >
-                      ⠿
-                    </div>
-                    <div className="color-info">
-                      <div className="color-name">{color.name}</div>
-                      <div className="color-hex">{color.hex.toUpperCase()}</div>
-                      <div className="color-lab">
-                        {renderColorValues(color)}
+            <div className={`color-list${selectedColor ? ' has-reference' : ''}`}>
+              <div className="color-list-row">
+                <div className="color-list-items">
+                  {filteredListColors.map((color) => {
+                    const idx = listColors.indexOf(color);
+                    const isDragging = dragIndex === idx;
+                    const isOverTarget = overIndex === idx && dragIndex !== null && dragIndex !== idx;
+                    const overTop = isOverTarget && dragIndex > idx;
+                    const overBottom = isOverTarget && dragIndex < idx;
+                    const classes = [
+                      'color-item',
+                      inspectedColor?.hex === color.hex ? 'selected' : '',
+                      isDragging ? 'dragging' : '',
+                      overTop ? 'drag-over-top' : '',
+                      overBottom ? 'drag-over-bottom' : '',
+                    ].filter(Boolean).join(' ');
+                    return (
+                      <div
+                        key={`${color.hex}-${idx}`}
+                        className={classes}
+                        style={{ backgroundColor: color.hex }}
+                        data-list-index={idx}
+                        onClick={() => setInspectedColor(color)}
+                      >
+                        <div
+                          className={`drag-handle${isListFiltered ? ' disabled' : ''}`}
+                          onPointerDown={isListFiltered ? undefined : e => handleDragStart(e, idx)}
+                          onClick={e => e.stopPropagation()}
+                          title={isListFiltered ? 'Clear search to reorder' : undefined}
+                        >
+                          ⠿
+                        </div>
+                        <div className="color-info">
+                          <div className="color-name">{color.name}</div>
+                          <div className="color-hex">{color.hex.toUpperCase()}</div>
+                          <div className="color-lab">
+                            {renderColorValues(color)}
+                          </div>
+                        </div>
+                        {!hidePercentage && selectedColor && (
+                          <div className="color-similarity">
+                            {Math.max(0, 100 - deltaE2000(selectedColor.l, selectedColor.a, selectedColor.b, color.l, color.a, color.b)).toFixed(2)}%
+                          </div>
+                        )}
+                        <button
+                          type="button"
+                          className="list-remove"
+                          onClick={e => { e.stopPropagation(); onRemoveFromList(color); }}
+                          title="Remove from list"
+                          aria-label="Remove from list"
+                        >
+                          ×
+                        </button>
                       </div>
-                    </div>
-                    {!hidePercentage && selectedColor && (
-                      <div className="color-similarity">
-                        {Math.max(0, 100 - deltaE2000(selectedColor.l, selectedColor.a, selectedColor.b, color.l, color.a, color.b)).toFixed(2)}%
-                      </div>
-                    )}
-                    <button
-                      type="button"
-                      className="list-remove"
-                      onClick={e => { e.stopPropagation(); onRemoveFromList(color); }}
-                      title="Remove from list"
-                      aria-label="Remove from list"
-                    >
-                      ×
-                    </button>
-                  </div>
-                );
-              })}
+                    );
+                  })}
+                </div>
+                {selectedColor && (
+                  <div className="reference-band" style={{ backgroundColor: selectedColor.hex }} />
+                )}
+              </div>
             </div>
           )}
         </div>
       )}
 
       <div style={{ display: activeTab === 'quiz' ? 'flex' : 'none', flexDirection: 'column', flex: '1 1 auto', minHeight: 0 }}>
-        <QuizTab allColors={allColors} />
+        <QuizTab allColors={allColors} setInspectedColor={setInspectedColor} />
       </div>
 
       <div style={{ display: activeTab === 'build' ? 'flex' : 'none', flexDirection: 'column', flex: '1 1 auto', minHeight: 0 }}>
