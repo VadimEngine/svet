@@ -1,6 +1,6 @@
 import { useRef, useState, useEffect } from 'react';
 import { DISPLAY_INCREMENT } from '../ColorVisualization';
-import { deltaE2000, hexToXyz } from '../colorUtils';
+import { deltaE2000, hexToXyz, parseImportedListCSV } from '../colorUtils';
 import { LabDisplay } from './LabDisplay';
 import { XyzDisplay } from './XyzDisplay';
 import { CopyButton } from './CopyButton';
@@ -60,6 +60,7 @@ export function ColorListPanel({
   onCreateList,
   onDeleteList,
   onRenameList,
+  onImportList,
   onMinimize,
   listScrollRef,
   onListScroll,
@@ -86,6 +87,39 @@ export function ColorListPanel({
     a.download = `${list.name.replace(/[^a-z0-9]/gi, '_') || 'colors'}.csv`;
     a.click();
     URL.revokeObjectURL(url);
+  };
+
+  const importInputRef = useRef(null);
+  const [importError, setImportError] = useState('');
+
+  const handleImportFileChange = (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+
+    const reportError = (message) => {
+      setImportError(message);
+      setTimeout(() => setImportError(''), 4000);
+    };
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      let colors;
+      try {
+        colors = parseImportedListCSV(String(reader.result));
+      } catch {
+        reportError('Could not read that file as a color list CSV.');
+        return;
+      }
+      if (colors.length === 0) {
+        reportError('No valid colors found in that file.');
+        return;
+      }
+      const name = file.name.replace(/\.csv$/i, '').trim() || 'Imported List';
+      onImportList(name, colors);
+    };
+    reader.onerror = () => reportError('Could not read that file.');
+    reader.readAsText(file);
   };
 
   const dragIndexRef = useRef(null);
@@ -540,6 +574,21 @@ export function ColorListPanel({
             </div>
             <button
               type="button"
+              className="list-import-btn"
+              onClick={() => importInputRef.current?.click()}
+              title="Import list from CSV"
+            >
+              ⇪
+            </button>
+            <input
+              ref={importInputRef}
+              type="file"
+              accept=".csv,text/csv"
+              onChange={handleImportFileChange}
+              style={{ display: 'none' }}
+            />
+            <button
+              type="button"
               className="list-new-btn"
               onClick={onCreateList}
               title="New list"
@@ -547,6 +596,7 @@ export function ColorListPanel({
               +
             </button>
           </div>
+          {importError && <div className="list-import-error">{importError}</div>}
 
           {/* Active list name + delete */}
           <div className="list-meta-row">

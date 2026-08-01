@@ -498,6 +498,12 @@ export function ColorVisualization() {
     setColorLists(prev => prev.map(l => l.id === id ? { ...l, name } : l));
   };
 
+  const handleImportList = (name, colors) => {
+    const id = `list-${Date.now()}`;
+    setColorLists(prev => [...prev, { id, name, colors }]);
+    setActiveListId(id);
+  };
+
   const handleResetCamera = () => {
     const camera = cameraRef.current;
     if (!camera) return;
@@ -909,6 +915,7 @@ export function ColorVisualization() {
           onCreateList={handleCreateList}
           onDeleteList={handleDeleteList}
           onRenameList={handleRenameList}
+          onImportList={handleImportList}
           onMinimize={() => setPanelCollapsed(true)}
           listScrollRef={listScrollRef}
           onListScroll={handleListScroll}

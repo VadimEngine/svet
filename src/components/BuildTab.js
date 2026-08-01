@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
-import { deltaE2000, hexToLab, hexToXyz, labToHex, xyzToHex } from '../colorUtils';
+import { deltaE2000, hexToLab, hexToXyz, labToHex, labToXyz, xyzToLab } from '../colorUtils';
 import { LabDisplay } from './LabDisplay';
 import { XyzDisplay } from './XyzDisplay';
 
 const NEAREST_COUNT = 15;
-const DEFAULT_HEX = '808080';
+const DEFAULT_LAB = hexToLab('808080');
 
 function SliderRow({ label, value, min, max, step, decimals, onChange }) {
   const [text, setText] = useState(value.toFixed(decimals));
@@ -75,17 +75,20 @@ function SliderRow({ label, value, min, max, step, decimals, onChange }) {
 }
 
 export function BuildTab({ allColors, plotMode, setInspectedColor }) {
-  const [hex, setHex] = useState(DEFAULT_HEX);
+  // lab is the single source of truth. xyz/hex are pure derived views for
+  // display — never fed back into state — so adjusting one slider can't
+  // drift the others via RGB's 8-bit quantization/gamut clipping.
+  const [lab, setLab] = useState(DEFAULT_LAB);
 
-  const lab = useMemo(() => hexToLab(hex) || { l: 0, a: 0, b: 0 }, [hex]);
-  const xyz = useMemo(() => hexToXyz(hex), [hex]);
+  const xyz = useMemo(() => labToXyz(lab.l, lab.a, lab.b), [lab]);
+  const hex = useMemo(() => labToHex(lab.l, lab.a, lab.b).slice(1), [lab]);
 
-  const setL = (l) => setHex(labToHex(l, lab.a, lab.b).slice(1));
-  const setA = (a) => setHex(labToHex(lab.l, a, lab.b).slice(1));
-  const setB = (b) => setHex(labToHex(lab.l, lab.a, b).slice(1));
-  const setX = (x) => setHex(xyzToHex(x, xyz.y, xyz.z).slice(1));
-  const setY = (y) => setHex(xyzToHex(xyz.x, y, xyz.z).slice(1));
-  const setZ = (z) => setHex(xyzToHex(xyz.x, xyz.y, z).slice(1));
+  const setL = (l) => setLab(prev => ({ ...prev, l }));
+  const setA = (a) => setLab(prev => ({ ...prev, a }));
+  const setB = (b) => setLab(prev => ({ ...prev, b }));
+  const setX = (x) => setLab(xyzToLab(x, xyz.y, xyz.z));
+  const setY = (y) => setLab(xyzToLab(xyz.x, y, xyz.z));
+  const setZ = (z) => setLab(xyzToLab(xyz.x, xyz.y, z));
 
   const nearest = useMemo(() => {
     if (allColors.length === 0) return [];

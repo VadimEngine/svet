@@ -1333,6 +1333,31 @@
   color: #fff;
 }
 
+.list-import-btn {
+  background: transparent;
+  border: 1px solid rgba(100, 160, 255, 0.35);
+  color: #64a0ff;
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  font-size: 0.9rem;
+  line-height: 1;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.15s, color 0.15s;
+}
+
+.list-import-btn:hover {
+  background: rgba(100, 160, 255, 0.12);
+  color: #fff;
+}
+
+.list-import-error {
+  color: #ff7070;
+  font-size: 0.75rem;
+  flex-shrink: 0;
+}
+
 .list-meta-row {
   display: flex;
   align-items: center;
@@ -1544,21 +1569,19 @@
   border-color: rgba(255, 255, 255, 0.35);
 }
 
+/* No border on the target swatch — anything touching its edge (even a
+   neutral-colored ring) can bias how the color reads next to it, and
+   this swatch's whole point is showing the color under guess exactly
+   as-is. The drop shadow is soft/offset enough not to blend into it. */
 .quiz-target-swatch {
   width: 80px;
   height: 80px;
   border-radius: 8px;
-  border: 2px solid rgba(255, 255, 255, 0.2);
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
 }
 
 .quiz-target-swatch.inspectable {
   cursor: pointer;
-  transition: border-color 0.15s;
-}
-
-.quiz-target-swatch.inspectable:hover {
-  border-color: rgba(255, 215, 0, 0.6);
 }
 
 .quiz-target-reveal {

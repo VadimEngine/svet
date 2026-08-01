@@ -1,3 +1,26 @@
+// Pure XYZ <-> Lab conversions (CIE 1976, D65) — no RGB involved, so no
+// 8-bit quantization or gamut clipping. Used as the lossless bridge
+// between the app's two editable color spaces; hex is derived from
+// these only for display, never fed back in as a source of truth.
+export const xyzToLab = (X, Y, Z) => {
+  const f = (t) => t > 0.008856 ? Math.cbrt(t) : 7.787 * t + 16 / 116;
+  const fx = f(X / 0.95047), fy = f(Y / 1.00000), fz = f(Z / 1.08883);
+  return { l: 116 * fy - 16, a: 500 * (fx - fy), b: 200 * (fy - fz) };
+};
+
+export const labToXyz = (L, a, b) => {
+  const fy = (L + 16) / 116;
+  const fx = a / 500 + fy;
+  const fz = fy - b / 200;
+  const d = 6 / 29;
+  const f = (t) => t > d ? t * t * t : 3 * d * d * (t - 4 / 29);
+  return {
+    x: 0.95047 * f(fx),
+    y: 1.00000 * f(fy),
+    z: 1.08883 * f(fz),
+  };
+};
+
 export const hexToLab = (hex) => {
   if (!/^[0-9a-f]{6}$/i.test(hex)) return null;
   const r = parseInt(hex.substring(0, 2), 16) / 255;
@@ -8,9 +31,7 @@ export const hexToLab = (hex) => {
   const X = rl * 0.4124564 + gl * 0.3575761 + bl * 0.1804375;
   const Y = rl * 0.2126729 + gl * 0.7151522 + bl * 0.0721750;
   const Z = rl * 0.0193339 + gl * 0.1191920 + bl * 0.9503041;
-  const f = (t) => t > 0.008856 ? Math.cbrt(t) : 7.787 * t + 16 / 116;
-  const fx = f(X / 0.95047), fy = f(Y / 1.00000), fz = f(Z / 1.08883);
-  return { l: 116 * fy - 16, a: 500 * (fx - fy), b: 200 * (fy - fz) };
+  return xyzToLab(X, Y, Z);
 };
 
 export const hexToXyz = (hex) => {
@@ -37,15 +58,8 @@ export const xyzToHex = (X, Y, Z) => {
 };
 
 export const labToHex = (L, a, b) => {
-  const fy = (L + 16) / 116;
-  const fx = a / 500 + fy;
-  const fz = fy - b / 200;
-  const d = 6 / 29;
-  const f = (t) => t > d ? t * t * t : 3 * d * d * (t - 4 / 29);
-  const X = 0.95047 * f(fx);
-  const Y = 1.00000 * f(fy);
-  const Z = 1.08883 * f(fz);
-  return xyzToHex(X, Y, Z);
+  const { x, y, z } = labToXyz(L, a, b);
+  return xyzToHex(x, y, z);
 };
 
 // Returns 3D plot position for a color given the current plot mode.
@@ -127,6 +141,64 @@ export const deltaE2000 = (L1, a1, b1, L2, a2, b2) => {
     Math.pow(dHp / (kH * SH), 2) +
     RT * (dCp / (kC * SC)) * (dHp / (kH * SH))
   );
+};
+
+const parseCsvLine = (line) => {
+  const fields = [];
+  let cur = '';
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (inQuotes) {
+      if (ch === '"') {
+        if (line[i + 1] === '"') { cur += '"'; i++; }
+        else inQuotes = false;
+      } else {
+        cur += ch;
+      }
+    } else if (ch === '"') {
+      inQuotes = true;
+    } else if (ch === ',') {
+      fields.push(cur);
+      cur = '';
+    } else {
+      cur += ch;
+    }
+  }
+  fields.push(cur);
+  return fields;
+};
+
+// Parses a user-imported "name,hex" CSV (the format produced by list
+// export). Tolerant of a missing header row, quoted names, and l*/a*/b*
+// are (re)derived from hex rather than trusted from the file.
+export const parseImportedListCSV = (csv) => {
+  const lines = csv.replace(/\r\n/g, '\n').split('\n').map(l => l.trim()).filter(Boolean);
+  if (lines.length === 0) return [];
+
+  const headerFields = parseCsvLine(lines[0]).map(h => h.trim().toLowerCase());
+  const headerNameIdx = headerFields.indexOf('name');
+  const headerHexIdx = headerFields.indexOf('hex');
+  const hasHeader = headerNameIdx !== -1 && headerHexIdx !== -1;
+  const dataLines = hasHeader ? lines.slice(1) : lines;
+  const nameIdx = hasHeader ? headerNameIdx : 0;
+  const hexIdx = hasHeader ? headerHexIdx : 1;
+
+  const colors = [];
+  const seen = new Set();
+  for (const line of dataLines) {
+    const fields = parseCsvLine(line);
+    if (fields.length <= Math.max(nameIdx, hexIdx)) continue;
+    const rawHex = (fields[hexIdx] || '').trim().replace(/^#/, '');
+    const lab = hexToLab(rawHex);
+    if (!lab) continue;
+    const hex = `#${rawHex.toLowerCase()}`;
+    if (seen.has(hex)) continue;
+    seen.add(hex);
+    const name = (fields[nameIdx] || '').trim() || hex.toUpperCase();
+    colors.push({ name, hex, l: lab.l, a: lab.a, b: lab.b });
+  }
+  return colors;
 };
 
 export const parseCSV = (csv) => {
